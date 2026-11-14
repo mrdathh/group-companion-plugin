@@ -52,6 +52,15 @@ public class LoadoutCollector implements SessionTracker.Listener
 	static final long MIN_INTERVAL_MS = 5_000;
 	static final long LOGIN_SETTLE_MS = 3_000;
 
+	// The server's limits for `loadouts` (server/src/ingest/schema.ts, inclusive); over any of them the whole
+	// request is rejected with 400, so setups are cut to fit instead (in the plugin's order, then slot order).
+	static final int MAX_LOADOUTS = 500;
+	static final int MAX_NAME = 200;
+	static final int MAX_NOTES = 2000;
+	static final int MAX_EQUIPMENT = 50;
+	static final int MAX_INVENTORY = 100;
+	static final int MAX_RUNE_POUCH = 10;
+
 	/** A parsed setup with raw item ids (resolved to protocol items on the client thread). */
 	@Value
 	static class RawSetup
@@ -122,7 +131,7 @@ public class LoadoutCollector implements SessionTracker.Listener
 			return;
 		}
 		List<LoadoutsData.Loadout> out = new ArrayList<>();
-		for (RawSetup s : setups)
+		for (RawSetup s : fitToServer(setups))
 		{
 			List<Item> pouch = null;
 			if (s.getRunePouch() != null)
@@ -138,6 +147,57 @@ public class LoadoutCollector implements SessionTracker.Listener
 				s.getNotes() == null || s.getNotes().isEmpty() ? null : s.getNotes()));
 		}
 		session.emit(EventType.LOADOUTS, new LoadoutsData(out));
+	}
+
+	/**
+	 * Setups cut to the server's limits: the first {@link #MAX_LOADOUTS}; name (also the id) and notes cut to
+	 * their maximum length; equipment, inventory and rune pouch to their first entries. Visible for tests.
+	 */
+	static List<RawSetup> fitToServer(List<RawSetup> setups)
+	{
+		List<RawSetup> out = new ArrayList<>();
+		for (RawSetup s : setups.size() > MAX_LOADOUTS ? setups.subList(0, MAX_LOADOUTS) : setups)
+		{
+			List<int[]> pouch = s.getRunePouch();
+			out.add(new RawSetup(cut(s.getName(), MAX_NAME), cut(s.getNotes(), MAX_NOTES),
+				first(s.getEquipment(), MAX_EQUIPMENT), first(s.getInventory(), MAX_INVENTORY),
+				pouch == null || pouch.size() <= MAX_RUNE_POUCH ? pouch : new ArrayList<>(pouch.subList(0, MAX_RUNE_POUCH))));
+		}
+		if (setups.size() > MAX_LOADOUTS)
+		{
+			log.info("Tracker Sync: {} Inventory Setups setups over the server's limit of {} were left out",
+				setups.size() - MAX_LOADOUTS, MAX_LOADOUTS);
+		}
+		return out;
+	}
+
+	/** At most {@code max} UTF-16 units (as the server counts), never splitting a surrogate pair. */
+	private static String cut(String s, int max)
+	{
+		if (s == null || s.length() <= max)
+		{
+			return s;
+		}
+		int end = Character.isHighSurrogate(s.charAt(max - 1)) ? max - 1 : max;
+		return s.substring(0, end);
+	}
+
+	private static Map<Integer, int[]> first(Map<Integer, int[]> slots, int max)
+	{
+		if (slots.size() <= max)
+		{
+			return slots;
+		}
+		Map<Integer, int[]> out = new LinkedHashMap<>();
+		for (Map.Entry<Integer, int[]> e : slots.entrySet())
+		{
+			if (out.size() == max)
+			{
+				break;
+			}
+			out.put(e.getKey(), e.getValue());
+		}
+		return out;
 	}
 
 	private List<ContainerItem> resolve(Map<Integer, int[]> slots, boolean equipment)

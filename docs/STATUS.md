@@ -32,7 +32,17 @@
 
 ## Honest state
 
-- `./gradlew --no-daemon clean build` passes on JDK 11: 195 unit tests, 0 failures, no javac warnings.
+- `./gradlew --no-daemon clean build` passes on JDK 11: 196 unit tests, 0 failures, no javac warnings.
+- **Server side (tracker-sync-server main, 2026-11-15):** drop luck, approximate loot and the merged collection log
+  are on the server's main; no further plugin change is needed for them. Drop luck uses the `loot` events'
+  `source.id`, `source.combatLevel` and `killCount`; approximate loot (loot played without this plugin) comes from
+  the difference between two `loot_history` snapshots; the app's collection log merges `collection_log`, `clog_item`
+  (name-only resolved by the server) and `collection_log_summary`. The owner's running server needs a rebuild and
+  restart to have them (migrations 8 and 9, then the first OSRS Wiki import).
+- **Contract check (2026-11-15):** the models and `ProtocolJsonTest` match the server's zod schemas. One real
+  mismatch, fixed here: `loadouts` were sent uncut, but the server rejects (400, the whole request with it) more
+  than 500 loadouts, names over 200 characters, notes over 2,000, or more than 50 equipment / 100 inventory / 10
+  rune pouch items. `LoadoutCollector.fitToServer` now cuts setups to fit (test `cutToTheServersLimits`).
 - **Collection log rework (2026-11-15), built and unit-tested, not yet run in the game.** The owner's logs showed the
   whole-log read probably never captured anything: the Group Ironmen Tracker (enabled in the same client, registered
   first) also opens the log's search when the log opens, so the item draws (script 4100) came before this plugin was
@@ -174,6 +184,7 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     `bank_deposit` each with the removed items within 2 s; normal bank deposits send none. Look at `DepositCollector`.
 28. [ ] **Loadouts.** With Inventory Setups setups saved: `loadouts` ~3 s after login with names, equipment
     (`equipSlot`), inventory slots, rune pouch and notes; edit a setup: updated within ~5 s; no setups: nothing.
+    A setup with very long notes still arrives (notes cut to 2,000 characters).
     Look at `LoadoutCollector`.
 
 29. [ ] **Diary tasks.** Open the diary journal for a region: `diaries` tasks in the same order and names, the
@@ -237,6 +248,8 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
   measured 1.33 MB in tests (nothing trimmed); about 680 such sources would start trimming. Trimming has only been
   checked against generated records, not a real account's Loot Tracker data.
 - Kill counts depend on RuneLite's Chat Commands plugin; raid/chest/clue loot on the Loot Tracker plugin.
+- Loadouts are cut to the server's limits: the first 500 setups in Inventory Setups' order, names (also the id) at
+  200 and notes at 2,000 characters, the first 50 equipment / 100 inventory / 10 rune pouch items in slot order.
 - Collection log `clog_item` depends on the game's notification setting (chat line or popup; "off" sends nothing);
   its `id` only when the name was seen recently (the server resolves name-only items).
 - `collection_log_summary`: the per-tab and recent-item varps are assumed to arrive with the other player vars at login
@@ -262,6 +275,17 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
 - Plugin Hub submission: the reviewers' standard third-party warning text is on the consent checkbox; check
   whether the hub manifest (`runelite-plugin.properties`) also needs a `warning=` line at submission time.
 - Status-code handling beyond the contract (408/429 retried, other 4xx dropped, queue kept on 401) is described in `docs/PROTOCOL.md`.
+
+## Next steps
+
+1. In-game checks of the latest work (restart the developer client first): item 12 (collection log rework: summary
+   at login, whole-log read with the Group Ironmen Tracker on, new items by chat and popup), item 9 (a kill with a
+   kill count: the input for the server's drop luck), item 35 (loot history import; after a session played without
+   this plugin, the server's Loot Today / 7 days shows it as approximate loot), item 28 (loadouts), then the rest of
+   the unticked items.
+2. The owner rebuilds and restarts the server so it has drop luck, approximate loot and the merged collection log;
+   the first real OSRS Wiki import runs about a minute after the restart.
+3. Later: a public BSD-2 repository and the Plugin Hub submission.
 
 ## Left undone
 

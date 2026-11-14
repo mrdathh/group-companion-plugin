@@ -4,9 +4,12 @@ import com.osrstracker.model.EventType;
 import com.osrstracker.model.Item;
 import com.osrstracker.model.LoadoutsData;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -100,6 +103,64 @@ public class LoadoutCollectorTest
 		assertEquals("Old", v1.get(0).getName());
 		assertArrayEquals(new int[]{385, 3}, v1.get(0).getInventory().get(0));
 		assertEquals(1, v1.get(0).getInventory().size());
+	}
+
+	@Test
+	public void cutToTheServersLimits()
+	{
+		StringBuilder longName = new StringBuilder();
+		for (int i = 0; i < 199; i++)
+		{
+			longName.append('a');
+		}
+		longName.appendCodePoint(0x1F600).append('b'); // a surrogate pair across the 200th unit
+		StringBuilder notes = new StringBuilder();
+		for (int i = 0; i < 2500; i++)
+		{
+			notes.append('n');
+		}
+		Map<Integer, int[]> inv = new LinkedHashMap<>();
+		for (int slot = 0; slot < 120; slot++)
+		{
+			inv.put(slot, new int[]{385, 1});
+		}
+		Map<Integer, int[]> eq = new LinkedHashMap<>();
+		for (int slot = 0; slot < 60; slot++)
+		{
+			eq.put(slot, new int[]{10828, 1});
+		}
+		List<int[]> pouch = new ArrayList<>();
+		for (int i = 0; i < 12; i++)
+		{
+			pouch.add(new int[]{560, 1});
+		}
+		List<LoadoutCollector.RawSetup> many = new ArrayList<>();
+		many.add(new LoadoutCollector.RawSetup(longName.toString(), notes.toString(), eq, inv, pouch));
+		for (int i = 1; i < 510; i++)
+		{
+			many.add(new LoadoutCollector.RawSetup("Setup " + i, null, Collections.emptyMap(), Collections.emptyMap(), null));
+		}
+
+		List<LoadoutCollector.RawSetup> fitted = LoadoutCollector.fitToServer(many);
+		assertEquals(500, fitted.size());
+		assertEquals("Setup 499", fitted.get(499).getName());
+		LoadoutCollector.RawSetup first = fitted.get(0);
+		assertEquals(199, first.getName().length());
+		assertEquals(2000, first.getNotes().length());
+		assertEquals(50, first.getEquipment().size());
+		assertEquals(100, first.getInventory().size());
+		assertTrue(first.getInventory().containsKey(99));
+		assertEquals(10, first.getRunePouch().size());
+
+		// Within the limits nothing changes.
+		Map<Integer, int[]> fewEq = new LinkedHashMap<>();
+		fewEq.put(3, new int[]{11785, 1});
+		LoadoutCollector.RawSetup small = new LoadoutCollector.RawSetup("Vorkath", "Bring antifire", fewEq, inv, null);
+		LoadoutCollector.RawSetup same = LoadoutCollector.fitToServer(Collections.singletonList(small)).get(0);
+		assertEquals("Vorkath", same.getName());
+		assertEquals("Bring antifire", same.getNotes());
+		assertEquals(1, same.getEquipment().size());
+		assertNull(same.getRunePouch());
 	}
 
 	@Test
