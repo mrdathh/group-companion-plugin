@@ -62,6 +62,7 @@ Nothing is sent until a server URL and a token are set and the player has ticked
 | `logout` | Login screen, client shutdown (waits for the final request), or a hop to an excluded world; only if a `login` was sent for this session. Not on plugin stop. Queued loot and captured containers go out before it. |
 | `loot` | Held until the end of the game tick (so a kill-count message of the same tick can be attached), then sent; the request leaves about 50 ms later. |
 | `level_up`, `death` | At once. |
+| `loot_history` | 10 s after login, then 2 s after the core Loot Tracker's stored records (`loottracker` RS-profile keys `drops_*`) change, at most once per 60 s; unchanged snapshots are not resent. Not sent over 1.5 MB (logged instead). |
 | `clog_item` | On the next game tick after the chat message. |
 | `skills` | 3 s after the last XP change, at most once per 10 s, at most ~10 s late while XP keeps changing. |
 | `container` inventory, equipment | 2 s after the last change (at most 15 s late while it keeps changing); also captured at login. |
@@ -95,6 +96,7 @@ Items (`Item`): `{ id, qty, name, ge, ha }`. `id` is canonical (un-noted; placeh
 
 - **`login`, `logout`**: `{ "world": 302 }`.
 - **`loot`**: `{ "source": { "type": "NPC|EVENT|PICKPOCKET|PLAYER|UNKNOWN", "name", "id"?, "combatLevel"? }, "killCount"?, "items": [Item], "totalGe" }`. `items` merges stacks of one id; `totalGe` = Σ qty × ge. Loot with no items is not sent. PvP loot: `name` is `"Player"`, no id or level.
+- **`loot_history`** (state): `{ "sources": [ { type, name, kills, firstAt?, lastAt?, items: [Item] } ] }` — RuneLite core Loot Tracker's stored totals per source for the current profile (`ConfigLoot` JSON: type, name, kills, first/last epoch millis, drops = [id, qty, …]); canonical ids, current prices; all PLAYER sources merged into one source named "Player".
 - **`level_up`**: `{ "skill": "Woodcutting", "level": 70 }` (real level; never for the login burst).
 - **`death`**: `{ "killer"?: { "type": "NPC|PLAYER", "name"?, "id"? }, "location": { x, y, plane, regionId } }`. A player killer has no name or id; `killer` is omitted when unknown.
 - **`clog_item`**: `{ "name": "Pet snakeling", "id"? }` (`id` only if the name was seen in recent loot or containers).

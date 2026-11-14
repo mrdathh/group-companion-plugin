@@ -22,7 +22,8 @@ public enum EventType
 	KILL_COUNTS("kill_counts", true),
 	COMBAT_ACHIEVEMENTS("combat_achievements", true),
 	LOADOUTS("loadouts", true),
-	KINGDOM("kingdom", true);
+	KINGDOM("kingdom", true),
+	LOOT_HISTORY("loot_history", true);
 
 	private final String wireName;
 	private final boolean state;

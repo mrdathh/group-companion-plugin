@@ -18,7 +18,8 @@ Package `com.osrstracker`, Java 11, Gradle project in this folder (Plugin Hub te
   `CollectionLogCollector`, `DeathCollector`, `StatusCollector`, `SlayerCollector`, `KillCountCollector`,
   `CombatAchievementCollector`, `timers/TimersCollector`, `StorageCollector` (rune pouch, quiver, plank sack, potion
   and group storage), `BagCollector` (chat-tracked bags), `DepositCollector` (deposit box → `bank_deposit`),
-  `LoadoutCollector` (Inventory Setups saved config), `KingdomCollector` (Miscellania).
+  `LoadoutCollector` (Inventory Setups saved config), `KingdomCollector` (Miscellania), `LootHistoryCollector`
+  (core Loot Tracker's stored `loottracker` records → `loot_history`).
 - `DiaryTasks` + `src/main/resources/com/osrstracker/diary_tasks.json` — per-task diary names and done-bits (generated
   from the Group Ironmen Tracker site data, BSD-2; cross-checked against WikiSync's spec, MIT).
 - `ContainerPublisher` — shared debounced emission of every `container` snapshot (capture now, send after a quiet period).

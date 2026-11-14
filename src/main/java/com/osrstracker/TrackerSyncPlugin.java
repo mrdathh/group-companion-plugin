@@ -112,6 +112,9 @@ public class TrackerSyncPlugin extends Plugin
 	private KingdomCollector kingdomCollector;
 
 	@Inject
+	private LootHistoryCollector lootHistoryCollector;
+
+	@Inject
 	private ScheduledExecutorService executor;
 
 	@Inject
@@ -130,7 +133,7 @@ public class TrackerSyncPlugin extends Plugin
 		collectors = Arrays.asList(lootCollector, skillsCollector, containerCollector, questDiaryCollector,
 			collectionLogCollector, deathCollector, statusCollector, timersCollector, slayerCollector,
 			killCountCollector, combatAchievementCollector, storageCollector, bagCollector, depositCollector,
-			loadoutCollector, kingdomCollector);
+			loadoutCollector, kingdomCollector, lootHistoryCollector);
 		eventBus.register(houseTracker);
 		for (SessionTracker.Listener c : collectors)
 		{
@@ -180,6 +183,7 @@ public class TrackerSyncPlugin extends Plugin
 		combatAchievementCollector.shutDown();
 		loadoutCollector.shutDown();
 		kingdomCollector.shutDown();
+		lootHistoryCollector.shutDown();
 		sender.stop();
 	}
 
@@ -249,6 +253,8 @@ public class TrackerSyncPlugin extends Plugin
 	{
 		switch (key)
 		{
+			case "sendLoot":
+				return Collections.singletonList(lootHistoryCollector);
 			case "sendSkills":
 				return Collections.singletonList(skillsCollector);
 			case "sendItems":

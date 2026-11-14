@@ -25,7 +25,7 @@ Exact JSON shapes and timings: [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 | Setting (all on by default) | Data | When |
 | --- | --- | --- |
-| Loot | NPC kills, raid/barrows/clue/chest rewards, pickpockets: source, kill count when the game prints one, items with GE and high-alch values | Within about a second |
+| Loot | NPC kills, raid/barrows/clue/chest rewards, pickpockets: source, kill count when the game prints one, items with GE and high-alch values; plus the loot history RuneLite's Loot Tracker has already recorded (totals per source) | Within about a second; the history after login and when the Loot Tracker saves |
 | Skills | XP and real level per skill, totals, combat level; level-ups | Snapshot 3 s after XP stops changing (at most every 10 s); level-ups at once |
 | Items | Inventory, equipment; bank, seed vault, looting bag while open | 2 s (carried) / 5 s (storage) after a change, and when the bank closes |
 | Quests and diaries | Quest states and quest points; diary completion per region and tier with every task and whether it is done | 5 s after login; quests every 60 s, diaries when a diary changes |
@@ -40,7 +40,8 @@ client; not when the plugin is merely switched off), deaths (with location and t
 and a heartbeat every 60 s when nothing else was sent. While the server is unreachable up to 500 events
 are kept and retried; live status is dropped instead.
 
-Optional helpers: kill counts come from RuneLite's **Chat Commands** plugin (keep it on); loadouts are the
+Optional helpers: kill counts come from RuneLite's **Chat Commands** plugin (keep it on); loot history from
+RuneLite's **Loot Tracker** plugin's saved data (it saves every few minutes, on logout and on exit); loadouts are the
 setups saved by the **Inventory Setups** hub plugin (read from its saved settings); farming timers
 are best with RuneLite's **Time Tracking** plugin on as well (it remembers patches visited before this
 plugin was installed and learns the farming tick offset); loot from raids, chests and clues needs

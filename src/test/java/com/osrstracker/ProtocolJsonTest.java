@@ -23,6 +23,7 @@ import com.osrstracker.model.SkillsData;
 import com.osrstracker.model.BankDepositData;
 import com.osrstracker.model.LoadoutsData;
 import com.osrstracker.model.KingdomData;
+import com.osrstracker.model.LootHistoryData;
 import com.osrstracker.model.CombatAchievementsData;
 import com.osrstracker.model.KillCountsData;
 import com.osrstracker.model.Location;
@@ -462,6 +463,21 @@ public class ProtocolJsonTest
 		assertJson(envelope("timers", "{\"timers\":[{\"id\":\"tears_of_guthix\",\"kind\":\"tears_of_guthix\",\"category\":\"Weekly\","
 			+ "\"place\":\"Tears of Guthix\",\"state\":\"GROWING\",\"readyAt\":\"2026-11-21T00:00:00.000Z\"}]}"),
 			event(EventType.TIMERS, data));
+	}
+
+	@Test
+	public void lootHistory()
+	{
+		LootHistoryData data = new LootHistoryData(java.util.Arrays.asList(
+			new LootHistoryData.Source("NPC", "Vorkath", 120, "2025-01-02T03:04:05.000Z", "2026-11-14T10:00:00.000Z",
+				Collections.singletonList(new Item(536, 240, "Dragon bones", 2500, 1))),
+			new LootHistoryData.Source("EVENT", "Barrows", 3, null, null, Collections.emptyList())));
+		assertJson(envelope("loot_history", "{\"sources\":["
+			+ "{\"type\":\"NPC\",\"name\":\"Vorkath\",\"kills\":120,\"firstAt\":\"2025-01-02T03:04:05.000Z\","
+			+ "\"lastAt\":\"2026-11-14T10:00:00.000Z\",\"items\":[{\"id\":536,\"qty\":240,\"name\":\"Dragon bones\",\"ge\":2500,\"ha\":1}]},"
+			+ "{\"type\":\"EVENT\",\"name\":\"Barrows\",\"kills\":3,\"items\":[]}]}"),
+			event(EventType.LOOT_HISTORY, data));
+		assertEquals("loot_history", EventType.stateKey(event(EventType.LOOT_HISTORY, null)));
 	}
 
 	@Test

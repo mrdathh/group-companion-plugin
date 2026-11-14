@@ -73,7 +73,8 @@ public interface TrackerSyncConfig extends Config
 	@ConfigItem(
 		keyName = "sendLoot",
 		name = "Loot",
-		description = "Send NPC kills, raids/clue/chest rewards and pickpockets as they happen",
+		description = "Send NPC kills, raids/clue/chest rewards and pickpockets as they happen, and the loot history"
+			+ " RuneLite's Loot Tracker has recorded",
 		section = dataSection,
 		position = 0
 	)

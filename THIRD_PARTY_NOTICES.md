@@ -44,6 +44,8 @@ Copyright (c) 2026, Mystix. BSD-2-Clause. Techniques only, own code:
   unlocks (SlayerMonitor).
 - `src/main/java/com/osrstracker/KingdomCollector.java`: the Kingdom of Miscellania varbits, approval out of 127, the
   Throne of Miscellania gate (KingdomMonitor, KingdomSyncPayload).
+- `src/main/java/com/osrstracker/LootHistoryCollector.java`: importing the core Loot Tracker's stored records
+  (LootMonitor bulk sync); the record format itself is RuneLite's (`ConfigLoot`).
 - `src/main/java/com/osrstracker/timers/TimersCollector.java`: Tears of Guthix visit message and the 7-day reset from
   00:00 UTC (TimerMonitor, MystixPlugin).
 

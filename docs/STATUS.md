@@ -3,9 +3,10 @@
 ## Owner decisions (2026-11-14)
 
 - This plugin is the only data source for the tracker. Dink and reading other plugins' saved data were
-  rejected as sources. (Two RuneLite **core** plugins' persisted data are read: Chat Commands'
-  kill counts and Time Tracking's farming observations. The owner confirmed keeping both on 2026-11-14; the
-  rejection is about Plugin Hub plugins such as Bank Memory.)
+  rejected as sources. (Three RuneLite **core** plugins' persisted data are read: Chat Commands'
+  kill counts, Time Tracking's farming observations, and Loot Tracker's stored loot totals (`loot_history`,
+  added 2026-11-14 at the owner's request, as Mystix imported them). The owner accepted reading core plugins'
+  data; the rejection is about Plugin Hub plugins such as Bank Memory or Loot Logger.)
 - Target: "Mystix and the Group Ironmen Tracker combined" (account tracking plus a live group view and map).
 - Rune pouch and other storages, and saved gear loadouts, were first not chosen; later on 2026-11-14 the owner
   asked for Mystix's feature set in full, starting with every storage, deposit-box deposits and saved gear
@@ -31,10 +32,11 @@
 
 ## Honest state
 
-- `./gradlew --no-daemon cleanTest build` passes on JDK 11: 151 unit tests, 0 failures, no javac warnings.
+- `./gradlew --no-daemon cleanTest build` passes on JDK 11: 160 unit tests, 0 failures, no javac warnings.
 - **Restart the developer client to pick up the latest work.** Built and unit-tested but never run in the game:
-  storages, deposit box and loadouts; per-task diaries, combat achievement tiers and tasks, slayer detail,
-  Kingdom of Miscellania and Tears of Guthix.
+  the loot history import (`loot_history`) and the new loot debug logging. Storages, loadouts, kingdom, diaries
+  etc. reached the server in the owner's run (2026-11-14); no live `loot` has been seen yet because the owner had
+  not killed anything since installing.
 - First in-game run on 2026-11-14 (see below): the basics work against the real game; most of the checklist is
   still unverified. The session-event bug and the repeated IP-address warning dialog are fixed but not yet
   re-checked in game.
@@ -96,7 +98,9 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
    items have the un-noted id; `ge`/`ha` look right. Look at `ContainerCollector`, `ItemMapper`.
 8. [ ] **Bank.** Open the bank: `container` bank about 5 s later, no placeholders or fillers; close it: sent at once.
    Also seed vault and looting bag. Look at `ContainerCollector`.
-9. [ ] **A kill with loot and kill count.** Kill a boss with a kill-count message (or Barrows): `loot` within ~1 s,
+9. [ ] **A kill with loot and kill count (first live kill).** In the client log (developer mode logs debug lines)
+   look for "Tracker Sync loot: LootReceived …", "held …", "emit …" and once "Tracker Sync: first loot event of
+   this session queued"; a "server rejected … (loot…) with HTTP 400" warning means the server refused it. Kill a boss with a kill-count message (or Barrows): `loot` within ~1 s,
    `source` name/id/combat level, `killCount` matching the chat; one event per kill (also with Loot Tracker
    turned off: NPC kills only). Raids/clues/chests need the Loot Tracker on. Look at `LootCollector`.
 10. [ ] **XP and a level-up.** (initial snapshot confirmed) `skills` 3 s after XP stops (≤ every 10 s while training); `level_up` once with the
@@ -164,6 +168,10 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
 34. [ ] **Group name (group ironman).** Requests carry `account.group` with the group's name within a few ticks of
     login (the first request may lack it); no second `login`; players without a group have no `group`. Look at
     `SessionTracker.readGroup`.
+35. [ ] **Loot history import.** ~10 s after login: one `loot_history` with the sources and totals the Loot
+    Tracker panel shows (kills, items); PvP sources merged as "Player"; after a kill, a new snapshot within a few
+    minutes of RuneLite's config sync (or at logout). Log line "loot history with N sources, B bytes".
+    Look at `LootHistoryCollector`.
 
 Also check: the plugin's Data toggles stop each group; turning one back on resends that group's snapshots.
 
@@ -193,6 +201,10 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
   choices are not decoded). Whether the approval var decays live while away is not known (see checklist 32).
 - Tears of Guthix: only visits seen by this plugin count (visit time kept in the plugin's RS-profile config); the
   quest-point / XP requirement for the next visit is not modelled.
+- Loot history depends on RuneLite's Loot Tracker plugin: with it disabled nothing new is stored (the old records
+  are still sent); its "Remember loot" setting only controls loading into its panel and pruning records older than
+  365 days, not saving. A history over 1.5 MB is not sent (logged); a 600-source × 25-item account measured
+  1.33 MB in tests. If real accounts get near that, the contract needs a split (parts or per-source events).
 - Kill counts depend on RuneLite's Chat Commands plugin; raid/chest/clue loot on the Loot Tracker plugin.
 - Collection log `clog_item` depends on the game's chat notification; its `id` only when the name was seen recently.
 - Timers list every patch the player has stood next to, also EMPTY ones (e.g. Lumbridge hops and tree after
