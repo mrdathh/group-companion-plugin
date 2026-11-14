@@ -17,7 +17,7 @@
 
 - `./gradlew --no-daemon clean build` passes on JDK 11: 96 unit tests, 0 failures, no javac warnings.
 - **The plugin has never been run in the game client.** Everything below that depends on live game data is unverified.
-- Git repository initialised (`main`), nothing committed.
+- First commit on `main`, pushed to the private GitHub repository `mrdathh/tracker-sync-plugin` (2026-11-14). It must be made public before a Plugin Hub submission.
 
 ## In-game verification checklist
 
