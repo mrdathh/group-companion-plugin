@@ -5,6 +5,7 @@ import com.osrstracker.model.EventType;
 import com.osrstracker.model.QuestsData;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
@@ -21,7 +22,8 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.eventbus.Subscribe;
 
 /**
- * Quests (Quest enum states + quest points) and achievement diaries (completion per region/tier).
+ * Quests (Quest enum states + quest points) and achievement diaries (completion per region/tier, plus every task
+ * with its state from {@link DiaryTasks}).
  * Quests are read 5 s after login, then every 60 s (the sender drops unchanged snapshots). Diaries are read
  * 5 s after login, then when a diary varbit changes, at most once per 5 s.
  */
@@ -122,15 +124,17 @@ public class QuestDiaryCollector implements SessionTracker.Listener
 	private final ClientThread clientThread;
 	private final ScheduledExecutorService executor;
 	private final Throttle diaries;
+	private final DiaryTasks tasks;
 	private ScheduledFuture<?> questTimer;
 
 	@Inject
 	QuestDiaryCollector(Client client, ClientThread clientThread, SessionTracker session, TrackerSyncConfig config,
-		ScheduledExecutorService executor, TimeSource time)
+		ScheduledExecutorService executor, TimeSource time, DiaryTasks tasks)
 	{
 		this.client = client;
 		this.session = session;
 		this.config = config;
+		this.tasks = tasks;
 		this.clientThread = clientThread;
 		this.executor = executor;
 		this.diaries = new Throttle(executor, time, DELAY_MS, MIN_INTERVAL_MS, MIN_INTERVAL_MS,
@@ -144,7 +148,8 @@ public class QuestDiaryCollector implements SessionTracker.Listener
 		{
 			return;
 		}
-		if (DIARY_VARBITS.contains(event.getVarbitId()))
+		if (DIARY_VARBITS.contains(event.getVarbitId()) || tasks.varbits().contains(event.getVarbitId())
+			|| tasks.varps().contains(event.getVarpId()))
 		{
 			diaries.trigger();
 		}
@@ -228,8 +233,18 @@ public class QuestDiaryCollector implements SessionTracker.Listener
 			Map<String, DiariesData.TierProgress> byTier = new LinkedHashMap<>();
 			tiers.forEach((tier, vars) ->
 			{
+				// Completion stays with the tier's own "all done" / "reward claimed" varbits; tasks are extra detail.
 				boolean complete = client.getVarbitValue(vars[0]) == 1 || client.getVarbitValue(vars[1]) == 1;
-				byTier.put(tier, new DiariesData.TierProgress(complete, null, null));
+				List<DiariesData.Task> list = tasks.evaluate(region, tier, client::getVarpValue, client::getVarbitValue);
+				if (list == null)
+				{
+					byTier.put(tier, new DiariesData.TierProgress(complete, null, null));
+				}
+				else
+				{
+					int done = (int) list.stream().filter(DiariesData.Task::isDone).count();
+					byTier.put(tier, new DiariesData.TierProgress(complete, done, list.size(), list));
+				}
 			});
 			out.put(region, byTier);
 		});

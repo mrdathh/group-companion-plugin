@@ -97,6 +97,21 @@ public class TrackerSyncPlugin extends Plugin
 	private HouseTracker houseTracker;
 
 	@Inject
+	private StorageCollector storageCollector;
+
+	@Inject
+	private BagCollector bagCollector;
+
+	@Inject
+	private DepositCollector depositCollector;
+
+	@Inject
+	private LoadoutCollector loadoutCollector;
+
+	@Inject
+	private KingdomCollector kingdomCollector;
+
+	@Inject
 	private ScheduledExecutorService executor;
 
 	@Inject
@@ -114,7 +129,8 @@ public class TrackerSyncPlugin extends Plugin
 	{
 		collectors = Arrays.asList(lootCollector, skillsCollector, containerCollector, questDiaryCollector,
 			collectionLogCollector, deathCollector, statusCollector, timersCollector, slayerCollector,
-			killCountCollector, combatAchievementCollector);
+			killCountCollector, combatAchievementCollector, storageCollector, bagCollector, depositCollector,
+			loadoutCollector, kingdomCollector);
 		eventBus.register(houseTracker);
 		for (SessionTracker.Listener c : collectors)
 		{
@@ -162,6 +178,8 @@ public class TrackerSyncPlugin extends Plugin
 		slayerCollector.shutDown();
 		killCountCollector.shutDown();
 		combatAchievementCollector.shutDown();
+		loadoutCollector.shutDown();
+		kingdomCollector.shutDown();
 		sender.stop();
 	}
 
@@ -240,9 +258,11 @@ public class TrackerSyncPlugin extends Plugin
 			case "sendStatus":
 				return Collections.singletonList(statusCollector);
 			case "sendTimers":
-				return Collections.singletonList(timersCollector);
+				return Arrays.asList(timersCollector, kingdomCollector);
 			case "sendProgress":
 				return Arrays.asList(slayerCollector, killCountCollector, combatAchievementCollector);
+			case "sendStorages":
+				return Arrays.asList(storageCollector, loadoutCollector);
 			default:
 				return Collections.emptyList();
 		}

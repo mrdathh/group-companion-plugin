@@ -9,6 +9,7 @@ public enum EventType
 	LEVEL_UP("level_up", false),
 	DEATH("death", false),
 	CLOG_ITEM("clog_item", false),
+	BANK_DEPOSIT("bank_deposit", false),
 	SKILLS("skills", true),
 	CONTAINER("container", true),
 	QUESTS("quests", true),
@@ -19,7 +20,9 @@ public enum EventType
 	TIMERS("timers", true),
 	SLAYER("slayer", true),
 	KILL_COUNTS("kill_counts", true),
-	COMBAT_ACHIEVEMENTS("combat_achievements", true);
+	COMBAT_ACHIEVEMENTS("combat_achievements", true),
+	LOADOUTS("loadouts", true),
+	KINGDOM("kingdom", true);
 
 	private final String wireName;
 	private final boolean state;

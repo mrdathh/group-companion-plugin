@@ -220,6 +220,26 @@ public class SessionTrackerTest
 	}
 
 	@Test
+	public void groupNameIsAddedWhenKnownWithoutASecondLogin()
+	{
+		state(GameState.LOGGING_IN, GameState.LOADING, GameState.LOGGED_IN);
+		org.mockito.Mockito.verify(sender).setOnlineAccount(new AccountRef("123456789", "Tester", "NORMAL", 335));
+
+		net.runelite.api.clan.ClanSettings settings = mock(net.runelite.api.clan.ClanSettings.class);
+		when(settings.getName()).thenReturn("The Irons");
+		when(client.getClanSettings(net.runelite.api.clan.ClanID.GROUP_IRONMAN)).thenReturn(settings);
+		session.onGameTick();
+		org.mockito.Mockito.verify(sender).setOnlineAccount(new AccountRef("123456789", "Tester", "NORMAL", 335, "The Irons"));
+
+		// Briefly absent clan data (loading, hop) keeps the name.
+		when(client.getClanSettings(net.runelite.api.clan.ClanID.GROUP_IRONMAN)).thenReturn(null);
+		hopTo(420);
+		session.onGameTick();
+		org.mockito.Mockito.verify(sender).setOnlineAccount(new AccountRef("123456789", "Tester", "NORMAL", 420, "The Irons"));
+		assertEquals(Collections.singletonList("login@335"), events);
+	}
+
+	@Test
 	public void resnapshotOnlyTouchesOneCollector()
 	{
 		AtomicInteger one = new AtomicInteger();

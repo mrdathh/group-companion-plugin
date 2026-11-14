@@ -2,14 +2,10 @@ package com.osrstracker;
 
 import com.osrstracker.model.ContainerData;
 import com.osrstracker.model.ContainerItem;
-import com.osrstracker.model.EventType;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
@@ -22,17 +18,17 @@ import net.runelite.api.gameval.InventoryID;
 import net.runelite.client.eventbus.Subscribe;
 
 /**
- * Containers: each ItemContainerChanged is captured immediately on the client thread (so storages are
- * read while they are open) and emitted after a quiet period: 2 s for inventory/equipment, 5 s for
- * bank, seed vault and looting bag, plus immediately when the bank or seed vault closes.
+ * Containers the game sends as real item containers: each ItemContainerChanged is captured immediately on the
+ * client thread (so storages are read while they are open) and emitted after a quiet period through the
+ * {@link ContainerPublisher}: 2 s for inventory/equipment, 5 s for storages, plus immediately when the bank or
+ * seed vault closes. Inventory and equipment belong to the "Items" setting; the bank, seed vault and looting
+ * bag too; the other storages (seed box, tackle box, kits, boat cargo holds) to "Storages and loadouts".
  */
 @Singleton
 public class ContainerCollector implements SessionTracker.Listener
 {
 	static final long CARRIED_DELAY_MS = 2_000;
 	static final long STORAGE_DELAY_MS = 5_000;
-	/** Upper bound so a container that changes every tick (e.g. while fletching) is still sent. */
-	static final long MAX_WAIT_MS = 15_000;
 
 	private static final Map<EquipmentInventorySlot, String> EQUIP_SLOTS = new HashMap<>();
 
@@ -51,24 +47,50 @@ public class ContainerCollector implements SessionTracker.Listener
 		EQUIP_SLOTS.put(EquipmentInventorySlot.AMMO, "ammo");
 	}
 
+	/** Contract slot name for an equipment slot index, or null. */
+	static String equipSlotName(int slotIdx)
+	{
+		for (EquipmentInventorySlot s : EquipmentInventorySlot.values())
+		{
+			if (s.getSlotIdx() == slotIdx)
+			{
+				return EQUIP_SLOTS.get(s);
+			}
+		}
+		return null;
+	}
+
 	/** Watched containers. */
 	enum Watched
 	{
-		INVENTORY(InventoryID.INV, "inventory", CARRIED_DELAY_MS),
-		EQUIPMENT(InventoryID.WORN, "equipment", CARRIED_DELAY_MS),
-		BANK(InventoryID.BANK, "bank", STORAGE_DELAY_MS),
-		SEED_VAULT(InventoryID.SEED_VAULT, "seed_vault", STORAGE_DELAY_MS),
-		LOOTING_BAG(InventoryID.LOOTING_BAG, "looting_bag", STORAGE_DELAY_MS);
+		INVENTORY(InventoryID.INV, "inventory", CARRIED_DELAY_MS, false),
+		EQUIPMENT(InventoryID.WORN, "equipment", CARRIED_DELAY_MS, false),
+		BANK(InventoryID.BANK, "bank", STORAGE_DELAY_MS, false),
+		SEED_VAULT(InventoryID.SEED_VAULT, "seed_vault", STORAGE_DELAY_MS, false),
+		LOOTING_BAG(InventoryID.LOOTING_BAG, "looting_bag", STORAGE_DELAY_MS, false),
+		SEED_BOX(InventoryID.SEED_BOX, "seed_box", STORAGE_DELAY_MS, true),
+		TACKLE_BOX(InventoryID.TACKLE_BOX, "tackle_box", STORAGE_DELAY_MS, true),
+		FORESTRY_KIT(InventoryID.FORESTRY_KIT, "forestry_kit", STORAGE_DELAY_MS, true),
+		HUNTSMANS_KIT(InventoryID.HUNTSMANS_KIT, "huntsmans_kit", STORAGE_DELAY_MS, true),
+		CARGO_HOLD_1(InventoryID.SAILING_BOAT_1_CARGOHOLD, "boat_cargo_hold_1", STORAGE_DELAY_MS, true),
+		CARGO_HOLD_2(InventoryID.SAILING_BOAT_2_CARGOHOLD, "boat_cargo_hold_2", STORAGE_DELAY_MS, true),
+		CARGO_HOLD_3(InventoryID.SAILING_BOAT_3_CARGOHOLD, "boat_cargo_hold_3", STORAGE_DELAY_MS, true),
+		CARGO_HOLD_4(InventoryID.SAILING_BOAT_4_CARGOHOLD, "boat_cargo_hold_4", STORAGE_DELAY_MS, true),
+		CARGO_HOLD_5(InventoryID.SAILING_BOAT_5_CARGOHOLD, "boat_cargo_hold_5", STORAGE_DELAY_MS, true),
+		TRAWLING_NET(InventoryID.SAILING_TRAWLING_NET, "trawling_net", STORAGE_DELAY_MS, true);
 
 		final int inventoryId;
 		final String wireName;
 		final long delayMs;
+		/** Under the "Storages and loadouts" setting rather than "Items". */
+		final boolean storage;
 
-		Watched(int inventoryId, String wireName, long delayMs)
+		Watched(int inventoryId, String wireName, long delayMs, boolean storage)
 		{
 			this.inventoryId = inventoryId;
 			this.wireName = wireName;
 			this.delayMs = delayMs;
+			this.storage = storage;
 		}
 
 		static Watched byInventoryId(int id)
@@ -88,23 +110,17 @@ public class ContainerCollector implements SessionTracker.Listener
 	private final SessionTracker session;
 	private final TrackerSyncConfig config;
 	private final ItemMapper items;
-	private final Map<Watched, Throttle> throttles = new HashMap<>();
-	private final Map<Watched, Captured> pending = new ConcurrentHashMap<>();
-	private final TimeSource time;
+	private final ContainerPublisher publisher;
 
 	@Inject
 	ContainerCollector(Client client, SessionTracker session, TrackerSyncConfig config, ItemMapper items,
-		ScheduledExecutorService executor, TimeSource time)
+		ContainerPublisher publisher)
 	{
 		this.client = client;
 		this.session = session;
 		this.config = config;
 		this.items = items;
-		this.time = time;
-		for (Watched w : Watched.values())
-		{
-			throttles.put(w, new Throttle(executor, time, w.delayMs, 0, MAX_WAIT_MS, () -> emit(w)));
-		}
+		this.publisher = publisher;
 	}
 
 	@Subscribe
@@ -122,11 +138,12 @@ public class ContainerCollector implements SessionTracker.Listener
 	{
 		if (event.getGroupId() == InterfaceID.BANKMAIN)
 		{
-			throttles.get(Watched.BANK).flushNow();
+			publisher.flush(Watched.BANK.wireName);
+			publisher.flush(StorageCollector.POTION_STORAGE);
 		}
 		else if (event.getGroupId() == InterfaceID.SEED_VAULT)
 		{
-			throttles.get(Watched.SEED_VAULT).flushNow();
+			publisher.flush(Watched.SEED_VAULT.wireName);
 		}
 	}
 
@@ -141,33 +158,29 @@ public class ContainerCollector implements SessionTracker.Listener
 	@Override
 	public void onSessionEnd()
 	{
-		// Send what was already captured (final flush), then forget it.
-		throttles.values().forEach(Throttle::flushNow);
-		pending.clear();
+		// Send what was already captured, from every container collector (final flush).
+		publisher.flushAll();
 	}
 
 	public void shutDown()
 	{
-		throttles.values().forEach(Throttle::cancel);
-		pending.clear();
+		publisher.cancelAll();
 	}
 
 	/** Client thread. */
 	private void capture(Watched w, ItemContainer container)
 	{
-		if (container == null || !config.sendItems() || !session.isActive())
+		if (container == null || !session.isActive() || !(w.storage ? config.sendStorages() : config.sendItems()))
 		{
 			return;
 		}
-		pending.put(w, new Captured(build(w, container.getItems()), time.now()));
-		throttles.get(w).trigger();
+		publisher.offer(build(w, container.getItems()), w.delayMs);
 	}
 
 	/** Client thread. */
 	ContainerData build(Watched w, net.runelite.api.Item[] slots)
 	{
 		List<ContainerItem> out = new ArrayList<>();
-		EquipmentInventorySlot[] equipSlots = EquipmentInventorySlot.values();
 		for (int slot = 0; slot < slots.length; slot++)
 		{
 			net.runelite.api.Item it = slots[slot];
@@ -175,40 +188,9 @@ public class ContainerCollector implements SessionTracker.Listener
 			{
 				continue;
 			}
-			String equipSlot = null;
-			if (w == Watched.EQUIPMENT)
-			{
-				for (EquipmentInventorySlot s : equipSlots)
-				{
-					if (s.getSlotIdx() == slot)
-					{
-						equipSlot = EQUIP_SLOTS.get(s);
-					}
-				}
-			}
+			String equipSlot = w == Watched.EQUIPMENT ? equipSlotName(slot) : null;
 			out.add(new ContainerItem(items.toItem(it.getId(), it.getQuantity()), slot, equipSlot));
 		}
 		return new ContainerData(w.wireName, out);
-	}
-
-	private void emit(Watched w)
-	{
-		Captured c = pending.remove(w);
-		if (c != null && config.sendItems())
-		{
-			session.emit(EventType.CONTAINER, c.data, c.at);
-		}
-	}
-
-	private static final class Captured
-	{
-		final ContainerData data;
-		final Instant at;
-
-		Captured(ContainerData data, Instant at)
-		{
-			this.data = data;
-			this.at = at;
-		}
 	}
 }

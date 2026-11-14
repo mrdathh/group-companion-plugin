@@ -139,6 +139,7 @@ public class TrackerSyncPluginInjectionTest
 		when(config.sendStatus()).thenReturn(true);
 		when(config.sendTimers()).thenReturn(true);
 		when(config.sendProgress()).thenReturn(true);
+		when(config.sendStorages()).thenReturn(true);
 
 		Injector parent = Guice.createInjector(BoundFieldModule.of(this));
 		plugin = new TrackerSyncPlugin();
@@ -161,9 +162,9 @@ public class TrackerSyncPluginInjectionTest
 		for (int i = 1; i <= 2; i++)
 		{
 			plugin.startUp();
-			verify(eventBus, times(12 * i)).register(any(Object.class));
+			verify(eventBus, times(17 * i)).register(any(Object.class));
 			plugin.shutDown();
-			verify(eventBus, times(12 * i)).unregister(any(Object.class));
+			verify(eventBus, times(17 * i)).unregister(any(Object.class));
 		}
 		assertEquals(0, server.getRequestCount());
 	}
@@ -256,7 +257,10 @@ public class TrackerSyncPluginInjectionTest
 		plugin.onClientShutdown(new ClientShutdown());
 		RecordedRequest logout = server.takeRequest(5, TimeUnit.SECONDS);
 		assertNotNull("logout request", logout);
-		assertEquals(Collections.singletonList("logout"), eventTypes(logout));
+		// Captured snapshots (the empty rune pouch, quiver and plank sack sent once after login) go out first.
+		List<String> types = eventTypes(logout);
+		assertEquals("logout", types.get(types.size() - 1));
+		assertEquals(1, Collections.frequency(types, "logout"));
 		plugin.shutDown();
 	}
 

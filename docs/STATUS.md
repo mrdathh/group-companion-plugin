@@ -7,15 +7,34 @@
   kill counts and Time Tracking's farming observations. The owner confirmed keeping both on 2026-11-14; the
   rejection is about Plugin Hub plugins such as Bank Memory.)
 - Target: "Mystix and the Group Ironmen Tracker combined" (account tracking plus a live group view and map).
-- Rune pouch and other storages, and saved gear loadouts, are not chosen for now.
+- Rune pouch and other storages, and saved gear loadouts, were first not chosen; later on 2026-11-14 the owner
+  asked for Mystix's feature set in full, starting with every storage, deposit-box deposits and saved gear
+  loadouts. Loadouts are read from the Inventory Setups hub plugin's saved setups (config group
+  `inventorysetups`): the owner chose this explicitly, knowing it reads that plugin's data (an exception to
+  the rule above). Bags are not read from other hub plugins' data (e.g. "Charges Improved").
 - Two projects: this plugin (`tracker-sync-plugin`) and `tracker-sync-server` (server, phone app, contract).
 - Local use first; the owner hosts a server later. Eventual idea: players self-host the server and this
   plugin is the connector.
 - Plugin Hub submission comes later and needs a public BSD-2 repository (none exists yet).
+- Gear tools (best owned gear, loadout comparison, upgrade suggestions, item catalogue) are deferred by the owner
+  (2026-11-14). If they come back, the agreed source is a plugin-sent catalogue from RuneLite's bundled item stats,
+  and no DPS calculator. Findings from the stopped attempt: `ItemManager.getItemStats(id)` comes from RuneLite's
+  static `stats.ids.min.json`, loaded asynchronously at client start (returns null until loaded, for noted items and
+  for items without data); it has slot, two-handed, the attack/defence bonuses, strength, ranged strength, magic
+  damage, prayer and attack speed, but no weapon category, attack styles or requirements. Equip requirements are not
+  reliably readable: item params 434/436 (and 435/437) look like skill/level pairs but on some items hold the level
+  to make the item, so they were not to be used. Enumerating items: `client.getItemCount()` ids, in slices.
+- Goals and roadmaps live in the phone app only. The plugin is a pure sender: it never reads data from the
+  server (beyond the HTTP status of its own requests), has no in-game goal overlay or side panel, and never
+  contacts anything but the player's configured server. Outside data (the owner allowed OSRS Wiki drop rates)
+  is fetched by the server.
 
 ## Honest state
 
-- `./gradlew --no-daemon cleanTest build` passes on JDK 11: 116 unit tests, 0 failures, no javac warnings.
+- `./gradlew --no-daemon cleanTest build` passes on JDK 11: 151 unit tests, 0 failures, no javac warnings.
+- **Restart the developer client to pick up the latest work.** Built and unit-tested but never run in the game:
+  storages, deposit box and loadouts; per-task diaries, combat achievement tiers and tasks, slayer detail,
+  Kingdom of Miscellania and Tears of Guthix.
 - First in-game run on 2026-11-14 (see below): the basics work against the real game; most of the checklist is
   still unverified. The session-event bug and the repeated IP-address warning dialog are fixed but not yet
   re-checked in game.
@@ -110,16 +129,70 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     again; change the URL to another host: the box unticks and sending stops. Look at `Consent`,
     `TrackerSyncPlugin.applyServerConfig`. On a seasonal/deadman/etc. world nothing is sent. Look at `SessionTracker`.
 
+21. [ ] **Rune pouch and quiver.** With a rune pouch / Dizana's quiver: `container` rune_pouch (runes and amounts
+    per slot) and quiver (ammo and amount) after login and ~2 s after casting / firing. Look at `StorageCollector`.
+22. [ ] **Plank sack.** Fill it: `container` plank_sack with the plank counts. Look at `StorageCollector`.
+23. [ ] **Potion storage.** Open the bank with potions stored: `container` potion_storage, 1-dose ids, `qty` =
+    doses (compare with the potion store), `unit: "dose"`; withdraw doses: updated. Look at `StorageCollector`.
+24. [ ] **Group storage (group ironman).** Open the shared storage, move items, close: one `container`
+    group_storage when "Saving..." shows; opening without changes sends nothing. Look at `StorageCollector`.
+25. [ ] **Real bag containers.** Open/check a seed box, tackle box, forestry kit, huntsman's kit, a boat cargo
+    hold: `container` with that name (`estimated` absent). Look at `ContainerCollector`.
+26. [ ] **Chat-tracked bags.** "Check" a fish barrel, log basket, gem bag, coal bag, herb sack: a `container` with
+    the listed items and no `estimated`; then "Fill" from the inventory: updated with `estimated: true`; with an
+    open bag gathering: nothing sent until the next Check. Confirm the check text formats match
+    (`BagCollector` patterns came from another plugin, unverified). Look at `BagCollector`.
+27. [ ] **Deposit box.** Deposit an item, the inventory, worn items and a Deposit-X amount at a deposit box: one
+    `bank_deposit` each with the removed items within 2 s; normal bank deposits send none. Look at `DepositCollector`.
+28. [ ] **Loadouts.** With Inventory Setups setups saved: `loadouts` ~3 s after login with names, equipment
+    (`equipSlot`), inventory slots, rune pouch and notes; edit a setup: updated within ~5 s; no setups: nothing.
+    Look at `LoadoutCollector`.
+
+29. [ ] **Diary tasks.** Open the diary journal for a region: `diaries` tasks in the same order and names, the
+    done ones matching the green entries, `done`/`total` right; complete one task: update within ~5 s.
+    Look at `DiaryTasks`, `QuestDiaryCollector`.
+30. [ ] **Combat achievement tasks.** ~5–10 s after login: `combat_achievements` with `tiers` (done/total per tier as
+    in the CA interface) and `tasks` (names, tiers, monsters); no hitch while loading. Look at
+    `CombatAchievementCollector` (cache ids from another plugin; if `tasks` is missing, the cache layout differs).
+31. [ ] **Slayer detail.** `slayer.master` names the master, `wildernessStreak`, `blocked` matches the block list in the
+    rewards interface for the current master, `unlocks` matches purchased unlocks/extensions. Look at
+    `SlayerCollector` (unlock `bit` column read as a bit index: verify).
+32. [ ] **Kingdom.** With Throne of Miscellania done: `kingdom` approval (compare with the in-game %), coffer, workers per
+    resource, royalTrouble. Check whether approval changes while away without visiting. Look at `KingdomCollector`.
+33. [ ] **Tears of Guthix.** Talk to Juna and play: `timers` entry tears_of_guthix GROWING with readyAt 00:00 UTC seven
+    days after the visit day; before any visit seen: UNKNOWN. Look at `timers/TimersCollector`.
+34. [ ] **Group name (group ironman).** Requests carry `account.group` with the group's name within a few ticks of
+    login (the first request may lack it); no second `login`; players without a group have no `group`. Look at
+    `SessionTracker.readGroup`.
+
 Also check: the plugin's Data toggles stop each group; turning one back on resends that group's snapshots.
 
 ## Known limits
 
-- Combat achievements: only `points` and `completed`; no tiers or task list (needs cache struct ids not in gameval).
+- Combat achievements: the task list comes from cache ids found in another Plugin Hub plugin (not in gameval); if the
+  layout changes, `tiers`/`tasks` are left out. The list is read once per client run.
 - House location after a teleport is the room template tile (no verified portal table per house location).
 - Farming: the farm tick offset is used only if RuneLite's Time Tracking plugin learned it; patches never seen are
   not listed; compost bins "filling" are reported EMPTY.
-- Rune pouch and other storages (potion storage, group storage, quiver, etc.) are not sent.
-- Diary task counts (`done`/`total`) are not sent; completion = "all tasks done" or "reward claimed" varbit.
+- Bags tracked from chat (fish barrel, log basket, gem bag, coal bag, herb sack): the "Check" text formats are
+  taken from the Mystix plugin and unverified; gathering straight into an open bag is not counted (after an
+  open bag was carried nothing is sent until the next Check); nothing is sent for a bag before its first full
+  read of a session; the bank's "empty containers" message empties every bag carried.
+- Not covered: essence pouches (varbits exist, not requested), bolt pouch, master scroll book, flamtaer bag and
+  other items whose contents the game shows only in their own way; Inventory Setups' bolt pouch, quiver and
+  "additional filtered items" are not sent.
+- Rune pouch, quiver and plank sack are sent once after every login, also when empty.
+- Group storage only when the player saves a change ("Saving..."); viewing it, or another member's changes,
+  send nothing until the player saves.
+- Potion storage needs the bank open; the potion store's var trigger is learnt the first time it is drawn.
+- Diary tasks come from bundled data (Group Ironmen Tracker site, BSD-2); a task added by a game update is missing
+  until the data is refreshed. Completion = "all tasks done" or "reward claimed" varbit.
+- Slayer: `blocked` is only the current master's list; Spria (9) has none; master names 1–9 are from the OSRS Wiki's
+  varbit table (facts only), 10 = Mortimer from RuneLite core.
+- Kingdom: workers are named Wood, Herbs/flax, Fishing, Mining, Hardwood, Farming (the herb/flax and hardwood
+  choices are not decoded). Whether the approval var decays live while away is not known (see checklist 32).
+- Tears of Guthix: only visits seen by this plugin count (visit time kept in the plugin's RS-profile config); the
+  quest-point / XP requirement for the next visit is not modelled.
 - Kill counts depend on RuneLite's Chat Commands plugin; raid/chest/clue loot on the Loot Tracker plugin.
 - Collection log `clog_item` depends on the game's chat notification; its `id` only when the name was seen recently.
 - Timers list every patch the player has stood next to, also EMPTY ones (e.g. Lumbridge hops and tree after
@@ -133,6 +206,6 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
 
 ## Left undone
 
-Combat achievement tiers/tasks; house location after teleport; learning the farming tick offset; rune pouch and
-other storages; diary task counts; in-game re-check of the session-event and consent fixes, and the rest of
-the checklist.
+House location after teleport; learning the farming tick offset; essence pouches and the other items listed
+above; decoding the kingdom's herb/flax and hardwood choices; in-game check of everything in the checklist that is
+not ticked, including the session-event and consent fixes.

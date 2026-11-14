@@ -30,7 +30,8 @@ public class QuestCadenceTest
 		when(config.sendQuests()).thenReturn(true);
 		SessionTracker session = mock(SessionTracker.class);
 		when(session.isActive()).thenReturn(true);
-		collector = new QuestDiaryCollector(mock(Client.class), clientThread, session, config, scheduler, scheduler.time);
+		collector = new QuestDiaryCollector(mock(Client.class), clientThread, session, config, scheduler, scheduler.time,
+			new DiaryTasks(net.runelite.http.api.RuneLiteAPI.GSON));
 	}
 
 	private static VarbitChanged varbit(int varbitId)

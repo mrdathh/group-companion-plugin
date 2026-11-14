@@ -27,7 +27,12 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.api.Quest;
+import net.runelite.api.QuestState;
+import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.Player;
 import net.runelite.api.WidgetNode;
 import net.runelite.api.coords.WorldPoint;
@@ -39,9 +44,10 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.timetracking.Tab;
 import net.runelite.client.plugins.timetracking.TimeTrackingConfig;
+import net.runelite.client.util.Text;
 
 /**
- * Farming patches and bird houses with predicted ready times.
+ * Farming patches, bird houses and Tears of Guthix with predicted ready times.
  *
  * <p>Observations ({@code varbit value:unix seconds}, the core plugin's format) come from two places, and the
  * newer one wins per patch: the core Time Tracking plugin's persisted RS-profile config (group
@@ -60,6 +66,10 @@ public class TimersCollector implements SessionTracker.Listener
 	static final String OWN_GROUP = TrackerSyncConfig.GROUP;
 	public static final String OWN_PREFIX = "timers.";
 	static final long BIRD_HOUSE_DURATION_S = 50 * 60;
+	static final String TOG_ID = "tears_of_guthix";
+	static final String TOG_KEY = OWN_PREFIX + "tog";
+	static final long TOG_RESET_DAYS = 7;
+	static final String TOG_CAVE_MESSAGE = "Your stories have entertained me. I will let you into the cave for a short time.";
 	private static final Set<Integer> FOSSIL_ISLAND_REGIONS = ImmutableSet.of(14650, 14651, 14652, 14906, 14907, 15162, 15163);
 
 	private final Client client;
@@ -141,7 +151,80 @@ public class TimersCollector implements SessionTracker.Listener
 		{
 			return;
 		}
-		session.emit(EventType.TIMERS, new TimersData(readTimers(time.nowMillis() / 1000)));
+		long now = time.nowMillis() / 1000;
+		List<TimersData.Timer> timers = new ArrayList<>(readTimers(now));
+		if (Quest.TEARS_OF_GUTHIX.getState(client) == QuestState.FINISHED)
+		{
+			timers.add(tearsOfGuthix(now, lastTearsVisit()));
+		}
+		session.emit(EventType.TIMERS, new TimersData(timers));
+	}
+
+	// ------------------------------------------------------------------ Tears of Guthix (weekly)
+
+	/**
+	 * Tears of Guthix: technique after the Mystix plugin's TimerMonitor (rjmccaskell/mystix-plugin, BSD-2-Clause):
+	 * Juna's "let you into the cave" message (or the minigame's collecting varbit) marks a visit; the next visit
+	 * is possible 7 days after the start (00:00 UTC) of the visit's day. The visit time is kept in this plugin's
+	 * RS-profile config, so it survives restarts; before the first visit seen by this plugin the state is UNKNOWN.
+	 */
+	static TimersData.Timer tearsOfGuthix(long now, Long lastVisit)
+	{
+		if (lastVisit == null)
+		{
+			return new TimersData.Timer(TOG_ID, "tears_of_guthix", "Weekly", "Tears of Guthix", null, null, "UNKNOWN", null);
+		}
+		long next = lastVisit - Math.floorMod(lastVisit, 86_400L) + TOG_RESET_DAYS * 86_400L;
+		return new TimersData.Timer(TOG_ID, "tears_of_guthix", "Weekly", "Tears of Guthix", null, null,
+			now >= next ? "READY" : "GROWING", IngestEvent.formatTime(Instant.ofEpochSecond(next)));
+	}
+
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if ((event.getType() == ChatMessageType.GAMEMESSAGE || event.getType() == ChatMessageType.DIALOG)
+			&& event.getMessage() != null && Text.removeTags(event.getMessage()).contains(TOG_CAVE_MESSAGE))
+		{
+			recordTearsVisit();
+		}
+	}
+
+	@Subscribe
+	public void onVarbitChanged(VarbitChanged event)
+	{
+		if (event.getVarbitId() == VarbitID.TOG_MINIGAME_COLLECTING && event.getValue() > 0)
+		{
+			recordTearsVisit();
+		}
+	}
+
+	private void recordTearsVisit()
+	{
+		if (!session.isActive() || !config.sendTimers())
+		{
+			return;
+		}
+		long now = time.nowMillis() / 1000;
+		Long last = lastTearsVisit();
+		// One visit per UTC day is enough (the message and the varbit both fire).
+		if (last == null || last / 86_400L != now / 86_400L)
+		{
+			configManager.setRSProfileConfiguration(OWN_GROUP, TOG_KEY, Long.toString(now));
+			schedule(1_000);
+		}
+	}
+
+	private Long lastTearsVisit()
+	{
+		String v = configManager.getRSProfileConfiguration(OWN_GROUP, TOG_KEY);
+		try
+		{
+			return v == null ? null : Long.parseLong(v.trim());
+		}
+		catch (NumberFormatException e)
+		{
+			return null;
+		}
 	}
 
 	// ------------------------------------------------------------------ observation (ported updateData)

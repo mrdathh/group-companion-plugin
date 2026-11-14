@@ -16,7 +16,11 @@ import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Player;
 import net.runelite.api.WorldType;
+import net.runelite.api.clan.ClanChannel;
+import net.runelite.api.clan.ClanID;
+import net.runelite.api.clan.ClanSettings;
 import net.runelite.api.gameval.VarbitID;
+import net.runelite.client.util.Text;
 
 /**
  * Tracks the logged-in account and gates everything that is sent: an event is only emitted while a
@@ -92,6 +96,13 @@ public class SessionTracker
 		return account != null;
 	}
 
+	/** Account type of the running session (protocol AccountType name), or null when none. */
+	public String accountType()
+	{
+		AccountRef a = account;
+		return a == null ? null : a.getType();
+	}
+
 	/** Emit an event for the current session, stamped now. Ignored when no session is active. */
 	public void emit(EventType type, Object data)
 	{
@@ -143,6 +154,7 @@ public class SessionTracker
 	{
 		if (!awaitingLogin)
 		{
+			refreshGroup();
 			return;
 		}
 		Player local = client.getLocalPlayer();
@@ -154,7 +166,7 @@ public class SessionTracker
 		awaitingLogin = false;
 
 		boolean allowed = isAllowedWorld(client.getWorldType());
-		AccountRef next = new AccountRef(Long.toString(hash), local.getName(), readAccountType(), client.getWorld());
+		AccountRef next = new AccountRef(Long.toString(hash), local.getName(), readAccountType(), client.getWorld(), readGroup());
 		AccountRef current = account;
 		if (current != null && (!allowed || !current.getHash().equals(next.getHash())))
 		{
@@ -170,11 +182,53 @@ public class SessionTracker
 		{
 			startSession(next);
 		}
-		else if (!current.equals(next))
+		else
+		{
+			if (next.getGroup() == null && current.getGroup() != null)
+			{
+				next = next.withGroup(current.getGroup());
+			}
+		}
+		if (current != null && !current.equals(next))
 		{
 			// World hop (or name/type change) within the same session: later requests carry the new values.
 			account = next;
 			sender.setOnlineAccount(next);
+		}
+	}
+
+	/**
+	 * The group ironman group's name: {@code client.getClanSettings(ClanID.GROUP_IRONMAN)}, or the group's clan
+	 * channel when the settings are not there yet. The game sends these a few ticks after login, so the name may be
+	 * unknown at the first request; it is added as soon as it is known (no second login). Only the group's name
+	 * is used, nothing about its members.
+	 */
+	String readGroup()
+	{
+		ClanSettings settings = client.getClanSettings(ClanID.GROUP_IRONMAN);
+		String name = settings == null ? null : settings.getName();
+		if (name == null || name.isEmpty())
+		{
+			ClanChannel channel = client.getClanChannel(ClanID.GROUP_IRONMAN);
+			name = channel == null ? null : channel.getName();
+		}
+		return name == null || name.trim().isEmpty() ? null : Text.removeTags(name).trim();
+	}
+
+	/** Add, change or drop the group name of the running session when the game's value differs (client thread). */
+	public void refreshGroup()
+	{
+		AccountRef a = account;
+		if (a == null)
+		{
+			return;
+		}
+		String group = readGroup();
+		// Only add or change: the clan data can be briefly absent (e.g. while loading), which must not drop it.
+		if (group != null && !group.equals(a.getGroup()))
+		{
+			account = a.withGroup(group);
+			sender.setOnlineAccount(account);
 		}
 	}
 
@@ -187,7 +241,7 @@ public class SessionTracker
 			String type = readAccountType();
 			if (!type.equals(a.getType()))
 			{
-				account = new AccountRef(a.getHash(), a.getRsn(), type, a.getWorld());
+				account = new AccountRef(a.getHash(), a.getRsn(), type, a.getWorld(), a.getGroup());
 				sender.setOnlineAccount(account);
 			}
 		}

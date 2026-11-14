@@ -16,7 +16,12 @@ Package `com.osrstracker`, Java 11, Gradle project in this folder (Plugin Hub te
 - `ItemMapper`, `LocationReader`, `HouseTracker` — item values; real-world location (instances, boats, house).
 - Collectors (one per data group): `LootCollector`, `SkillsCollector`, `ContainerCollector`, `QuestDiaryCollector`,
   `CollectionLogCollector`, `DeathCollector`, `StatusCollector`, `SlayerCollector`, `KillCountCollector`,
-  `CombatAchievementCollector`, `timers/TimersCollector`.
+  `CombatAchievementCollector`, `timers/TimersCollector`, `StorageCollector` (rune pouch, quiver, plank sack, potion
+  and group storage), `BagCollector` (chat-tracked bags), `DepositCollector` (deposit box → `bank_deposit`),
+  `LoadoutCollector` (Inventory Setups saved config), `KingdomCollector` (Miscellania).
+- `DiaryTasks` + `src/main/resources/com/osrstracker/diary_tasks.json` — per-task diary names and done-bits (generated
+  from the Group Ironmen Tracker site data, BSD-2; cross-checked against WikiSync's spec, MIT).
+- `ContainerPublisher` — shared debounced emission of every `container` snapshot (capture now, send after a quiet period).
 - `timers/` other files — ported RuneLite Time Tracking tables (BSD-2 headers kept; do not edit beyond package/imports).
 - `model/` — plain classes mirroring the contract's JSON; `WriteNull` writes explicit `null` for `T | null` fields.
 - Tests in `src/test/java/com/osrstracker/`: JSON vs hand-written contract JSON (`ProtocolJsonTest`), sender with
@@ -45,7 +50,11 @@ game input breaks Jagex rules). Ask the owner to run it and follow `docs/STATUS.
 - Send nothing until URL and token are set and consent is ticked; nothing on excluded worlds. Do not put a
   `warning` on text fields (RuneLite shows it on every focus loss); the warning sits on the consent checkbox.
 - Use `net.runelite.api.gameval` constants; keep deprecation warnings at zero.
-- Ported code keeps its licence notice and is listed in `THIRD_PARTY_NOTICES.md`.
+- Ported code keeps its licence notice and is listed in `THIRD_PARTY_NOTICES.md`. No text copied from the OSRS Wiki
+  (CC BY-NC-SA) inside the plugin.
+- **Pure sender (owner decision 2026-11-14):** the plugin never reads data from the server (beyond the HTTP status of its
+  own requests), has no in-game goal overlay or side panel, and contacts nothing but the player's configured server.
+  Goals/roadmaps live in the phone app; outside data (e.g. OSRS Wiki drop rates) is fetched by the server.
 
 ## Contract rule
 

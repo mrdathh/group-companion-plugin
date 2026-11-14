@@ -20,6 +20,9 @@ import com.osrstracker.model.LootData;
 import com.osrstracker.model.QuestsData;
 import com.osrstracker.model.SessionData;
 import com.osrstracker.model.SkillsData;
+import com.osrstracker.model.BankDepositData;
+import com.osrstracker.model.LoadoutsData;
+import com.osrstracker.model.KingdomData;
 import com.osrstracker.model.CombatAchievementsData;
 import com.osrstracker.model.KillCountsData;
 import com.osrstracker.model.Location;
@@ -89,6 +92,15 @@ public class ProtocolJsonTest
 			+ "\"client\":{\"id\":\"b1e4c3d2-1111-4222-8333-444455556666\",\"plugin\":\"0.1.0\"},"
 			+ "\"account\":{\"hash\":\"-7206031417462364190\",\"rsn\":\"Some Name\",\"type\":\"HARDCORE_IRONMAN\",\"world\":302},"
 			+ "\"events\":[" + envelope("login", "{\"world\":302}") + "]}", req);
+	}
+
+	@Test
+	public void requestOfAGroupIronman()
+	{
+		IngestRequest req = new IngestRequest(1, new ClientInfo("c", "0.1.0"),
+			new AccountRef("1", "A", "GROUP_IRONMAN", 301, "The Irons"), Collections.emptyList());
+		assertJson("{\"v\":1,\"client\":{\"id\":\"c\",\"plugin\":\"0.1.0\"},"
+			+ "\"account\":{\"hash\":\"1\",\"rsn\":\"A\",\"type\":\"GROUP_IRONMAN\",\"world\":301,\"group\":\"The Irons\"},\"events\":[]}", req);
 	}
 
 	@Test
@@ -341,6 +353,115 @@ public class ProtocolJsonTest
 		assertEquals("combat_achievements", EventType.stateKey(event(EventType.COMBAT_ACHIEVEMENTS, null)));
 		assertTrue(EventType.STATUS.isVolatile());
 		assertTrue(!EventType.SLAYER.isVolatile());
+	}
+
+	@Test
+	public void potionStorageCountsDoses()
+	{
+		ContainerData data = new ContainerData("potion_storage",
+			Collections.singletonList(new ContainerItem(new Item(2452, 37, "Antifire potion(1)", 120, 18), 4, null, "dose")));
+		assertJson(envelope("container", "{\"container\":\"potion_storage\",\"items\":[{\"id\":2452,\"qty\":37,"
+			+ "\"name\":\"Antifire potion(1)\",\"ge\":120,\"ha\":18,\"slot\":4,\"unit\":\"dose\"}]}"),
+			event(EventType.CONTAINER, data));
+	}
+
+	@Test
+	public void estimatedBag()
+	{
+		ContainerData data = new ContainerData("fish_barrel",
+			Collections.singletonList(new ContainerItem(new Item(383, 12, "Raw shark", 700, 120), 0, null)), true);
+		assertJson(envelope("container", "{\"container\":\"fish_barrel\",\"items\":[{\"id\":383,\"qty\":12,"
+			+ "\"name\":\"Raw shark\",\"ge\":700,\"ha\":120,\"slot\":0}],\"estimated\":true}"),
+			event(EventType.CONTAINER, data));
+		// Read from the game: no "estimated" field at all.
+		assertJson(envelope("container", "{\"container\":\"rune_pouch\",\"items\":[]}"),
+			event(EventType.CONTAINER, new ContainerData("rune_pouch", Collections.emptyList())));
+	}
+
+	@Test
+	public void bankDeposit()
+	{
+		assertJson(envelope("bank_deposit", "{\"items\":[{\"id\":1513,\"qty\":27,\"name\":\"Magic logs\",\"ge\":1100,\"ha\":192}]}"),
+			event(EventType.BANK_DEPOSIT, new BankDepositData(Collections.singletonList(new Item(1513, 27, "Magic logs", 1100, 192)))));
+		assertEquals(null, EventType.stateKey(event(EventType.BANK_DEPOSIT, null)));
+	}
+
+	@Test
+	public void loadouts()
+	{
+		LoadoutsData.Loadout full = new LoadoutsData.Loadout("Vorkath", "Vorkath", "inventory_setups",
+			Collections.singletonList(new ContainerItem(new Item(11785, 1, "Armadyl crossbow", 30000000, 60000), 3, "weapon")),
+			Collections.singletonList(new ContainerItem(new Item(385, 1, "Shark", 900, 150), 0, null)),
+			Collections.singletonList(new Item(560, 500, "Death rune", 200, 108)), "Bring antifire");
+		LoadoutsData.Loadout bare = new LoadoutsData.Loadout("Skilling", "Skilling", "inventory_setups",
+			Collections.emptyList(), Collections.emptyList(), null, null);
+		assertJson(envelope("loadouts", "{\"loadouts\":["
+			+ "{\"id\":\"Vorkath\",\"name\":\"Vorkath\",\"source\":\"inventory_setups\","
+			+ "\"equipment\":[{\"id\":11785,\"qty\":1,\"name\":\"Armadyl crossbow\",\"ge\":30000000,\"ha\":60000,\"slot\":3,\"equipSlot\":\"weapon\"}],"
+			+ "\"inventory\":[{\"id\":385,\"qty\":1,\"name\":\"Shark\",\"ge\":900,\"ha\":150,\"slot\":0}],"
+			+ "\"runePouch\":[{\"id\":560,\"qty\":500,\"name\":\"Death rune\",\"ge\":200,\"ha\":108}],"
+			+ "\"notes\":\"Bring antifire\"},"
+			+ "{\"id\":\"Skilling\",\"name\":\"Skilling\",\"source\":\"inventory_setups\",\"equipment\":[],\"inventory\":[]}]}"),
+			event(EventType.LOADOUTS, new LoadoutsData(java.util.Arrays.asList(full, bare))));
+		assertEquals("loadouts", EventType.stateKey(event(EventType.LOADOUTS, null)));
+	}
+
+	@Test
+	public void diariesWithTasks()
+	{
+		Map<String, DiariesData.TierProgress> tiers = new LinkedHashMap<>();
+		tiers.put("Easy", new DiariesData.TierProgress(false, 1, 2, java.util.Arrays.asList(
+			new DiariesData.Task("Steal a cake.", true), new DiariesData.Task("Use the altar.", false))));
+		Map<String, Map<String, DiariesData.TierProgress>> diaries = new LinkedHashMap<>();
+		diaries.put("Ardougne", tiers);
+		assertJson(envelope("diaries", "{\"diaries\":{\"Ardougne\":{\"Easy\":{\"complete\":false,\"done\":1,\"total\":2,"
+			+ "\"tasks\":[{\"name\":\"Steal a cake.\",\"done\":true},{\"name\":\"Use the altar.\",\"done\":false}]}}}}"),
+			event(EventType.DIARIES, new DiariesData(diaries)));
+	}
+
+	@Test
+	public void slayerDetail()
+	{
+		SlayerData data = new SlayerData(new SlayerData.Task("Gargoyles", 50, 180, null), 900, 120, "Duradel", 3,
+			java.util.Arrays.asList("Black demons", "Spiritual creatures"), Collections.singletonList("Gargoyle smasher"));
+		assertJson(envelope("slayer", "{\"task\":{\"name\":\"Gargoyles\",\"remaining\":50,\"initial\":180},\"points\":900,"
+			+ "\"streak\":120,\"master\":\"Duradel\",\"wildernessStreak\":3,\"blocked\":[\"Black demons\",\"Spiritual creatures\"],"
+			+ "\"unlocks\":[\"Gargoyle smasher\"]}"), event(EventType.SLAYER, data));
+	}
+
+	@Test
+	public void kingdom()
+	{
+		Map<String, Integer> workers = new LinkedHashMap<>();
+		workers.put("Wood", 5);
+		workers.put("Fishing", 5);
+		assertJson(envelope("kingdom", "{\"approval\":75,\"coffer\":750000,\"workers\":{\"Wood\":5,\"Fishing\":5},\"royalTrouble\":true}"),
+			event(EventType.KINGDOM, new KingdomData(75, 750000, workers, true)));
+		assertEquals("kingdom", EventType.stateKey(event(EventType.KINGDOM, null)));
+	}
+
+	@Test
+	public void combatAchievementTiersAndTasks()
+	{
+		Map<String, CombatAchievementsData.TierCount> tiers = new LinkedHashMap<>();
+		tiers.put("Easy", new CombatAchievementsData.TierCount(1, 2));
+		CombatAchievementsData data = new CombatAchievementsData(1, 1, tiers, java.util.Arrays.asList(
+			new CombatAchievementsData.Task(0, "Noxious Foe", "Easy", "Aberrant Spectre", true),
+			new CombatAchievementsData.Task(5, "Into the Den of Giants", "Easy", null, false)));
+		assertJson(envelope("combat_achievements", "{\"points\":1,\"completed\":1,\"tiers\":{\"Easy\":{\"done\":1,\"total\":2}},"
+			+ "\"tasks\":[{\"id\":0,\"name\":\"Noxious Foe\",\"tier\":\"Easy\",\"monster\":\"Aberrant Spectre\",\"done\":true},"
+			+ "{\"id\":5,\"name\":\"Into the Den of Giants\",\"tier\":\"Easy\",\"done\":false}]}"),
+			event(EventType.COMBAT_ACHIEVEMENTS, data));
+	}
+
+	@Test
+	public void tearsOfGuthixTimer()
+	{
+		TimersData data = new TimersData(Collections.singletonList(new TimersData.Timer("tears_of_guthix", "tears_of_guthix",
+			"Weekly", "Tears of Guthix", null, null, "GROWING", "2026-11-21T00:00:00.000Z")));
+		assertJson(envelope("timers", "{\"timers\":[{\"id\":\"tears_of_guthix\",\"kind\":\"tears_of_guthix\",\"category\":\"Weekly\","
+			+ "\"place\":\"Tears of Guthix\",\"state\":\"GROWING\",\"readyAt\":\"2026-11-21T00:00:00.000Z\"}]}"),
+			event(EventType.TIMERS, data));
 	}
 
 	@Test

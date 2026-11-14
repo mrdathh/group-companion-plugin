@@ -166,4 +166,17 @@ public interface TrackerSyncConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigItem(
+		keyName = "sendStorages",
+		name = "Storages and loadouts",
+		description = "Send rune pouch, quiver, potion storage, group storage, bags (some estimated from what the game"
+			+ " shows), seed box, tackle box, kits, boat cargo, deposit-box deposits, and your Inventory Setups loadouts",
+		section = dataSection,
+		position = 8
+	)
+	default boolean sendStorages()
+	{
+		return true;
+	}
 }
