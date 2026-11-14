@@ -7,7 +7,9 @@ import com.osrstracker.model.AccountRef;
 import com.osrstracker.model.ContainerData;
 import com.osrstracker.model.EventType;
 import com.osrstracker.model.IngestEvent;
+import com.osrstracker.model.Item;
 import com.osrstracker.model.LevelUpData;
+import com.osrstracker.model.LootHistoryData;
 import com.osrstracker.model.SkillsData;
 import com.osrstracker.model.Location;
 import com.osrstracker.model.StatusData;
@@ -620,6 +622,127 @@ public class EventSenderTest
 		sender.setOnlineAccount(hopped);
 		scheduler.advance(EventSender.FLUSH_DELAY_MS);
 		assertEquals(420, body(0).getAsJsonObject("account").get("world").getAsInt());
+	}
+
+	// ------------------------------------------------------------------ loot_history travels alone
+
+	private IngestEvent lootHistory(int kills)
+	{
+		return IngestEvent.create(EventType.LOOT_HISTORY, new LootHistoryData(Collections.singletonList(
+			new LootHistoryData.Source("NPC", "Vorkath", kills, null, null, Collections.singletonList(
+				new Item(536, 2, "Dragon bones", 2000, 0))))), scheduler.time.now());
+	}
+
+	private List<String> types(int request)
+	{
+		List<String> out = new ArrayList<>();
+		for (int i = 0; i < events(request).size(); i++)
+		{
+			out.add(events(request).get(i).getAsJsonObject().get("type").getAsString());
+		}
+		return out;
+	}
+
+	@Test
+	public void lootHistoryIsSentInARequestOfItsOwn()
+	{
+		sender.enqueue(ACCOUNT, history());
+		sender.enqueue(ACCOUNT, skills(100));
+		sender.enqueue(ACCOUNT, lootHistory(1));
+		sender.enqueue(ACCOUNT, history());
+		sender.enqueue(ACCOUNT, container("inventory"));
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+
+		assertEquals(2, requestCount());
+		// Everything else is still batched together, in order.
+		assertEquals(java.util.Arrays.asList("level_up", "skills", "level_up", "container"), types(0));
+		assertEquals(Collections.singletonList("loot_history"), types(1));
+		assertEquals(ACCOUNT.getHash(), body(1).getAsJsonObject("account").get("hash").getAsString());
+		assertEquals(0, sender.pendingHistory());
+		assertEquals(0, sender.pendingStates());
+	}
+
+	@Test
+	public void lootHistoryQueuedFirstGoesFirstAndAlone()
+	{
+		sender.enqueue(ACCOUNT, lootHistory(1));
+		sender.enqueue(ACCOUNT, history());
+		sender.enqueue(ACCOUNT, skills(100));
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+
+		assertEquals(2, requestCount());
+		assertEquals(Collections.singletonList("loot_history"), types(0));
+		assertEquals(java.util.Arrays.asList("level_up", "skills"), types(1));
+	}
+
+	@Test
+	public void lootHistoryIsSentAloneBetweenOtherRequests()
+	{
+		sender.enqueue(ACCOUNT, history());
+		sender.enqueue(ACCOUNT, lootHistory(1));
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		// More events arrive later: the loot history is never batched with them.
+		sender.enqueue(ACCOUNT, history());
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		boolean sentAlone = false;
+		for (int i = 0; i < requestCount(); i++)
+		{
+			List<String> t = types(i);
+			if (t.contains("loot_history"))
+			{
+				assertEquals(Collections.singletonList("loot_history"), t);
+				sentAlone = true;
+			}
+		}
+		assertTrue(sentAlone);
+		assertEquals(0, sender.pendingStates());
+		assertEquals(0, sender.pendingHistory());
+	}
+
+	@Test
+	public void lootHistoryRetriedAfterAFailureIsStillAlone()
+	{
+		nextResponse = status(503);
+		sender.enqueue(ACCOUNT, lootHistory(1));
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		assertEquals(1, requestCount());
+		assertEquals(1, sender.pendingStates());
+
+		sender.enqueue(ACCOUNT, history());
+		nextResponse = ok();
+		scheduler.advance(EventSender.BACKOFF_MIN_MS);
+		assertEquals(3, requestCount());
+		assertEquals(Collections.singletonList("loot_history"), types(1));
+		assertEquals(Collections.singletonList("level_up"), types(2));
+	}
+
+	@Test
+	public void unchangedLootHistoryIsNotResent()
+	{
+		sender.enqueue(ACCOUNT, lootHistory(1));
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		sender.enqueue(ACCOUNT, lootHistory(1));
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		assertEquals(1, requestCount());
+	}
+
+	@Test
+	public void finalFlushPrefersTheOtherEvents() throws Exception
+	{
+		sender.enqueue(ACCOUNT, lootHistory(1));
+		sender.enqueue(ACCOUNT, history());
+		sender.stop().get(5, TimeUnit.SECONDS);
+		assertEquals(1, requestCount());
+		assertEquals(Collections.singletonList("level_up"), types(0));
+	}
+
+	@Test
+	public void finalFlushSendsALoneLootHistory() throws Exception
+	{
+		sender.enqueue(ACCOUNT, lootHistory(1));
+		sender.stop().get(5, TimeUnit.SECONDS);
+		assertEquals(1, requestCount());
+		assertEquals(Collections.singletonList("loot_history"), types(0));
 	}
 
 	// ------------------------------------------------------------------ shutdown

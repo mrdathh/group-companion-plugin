@@ -38,7 +38,8 @@ import okhttp3.Response;
 
 /**
  * Owns the outgoing queue: batching, retry with backoff, the history cap, newest-snapshot-per-state-key,
- * unchanged-snapshot suppression and the heartbeat. Thread-safe; all network IO goes through
+ * unchanged-snapshot suppression, solo events (sent alone, see {@link EventType#isSolo()}) and the heartbeat.
+ * Thread-safe; all network IO goes through
  * {@link Call#enqueue} so no caller ever blocks.
  */
 @Slf4j
@@ -217,7 +218,8 @@ public class EventSender
 		}
 		String stateKey = EventType.stateKey(event);
 		Pending p = new Pending(account, event, stateKey == null ? null : account.getHash() + "|" + stateKey,
-			stateKey == null ? null : gson.toJson(event.getData()), seq++, isVolatile, resendUnchanged);
+			stateKey == null ? null : gson.toJson(event.getData()), seq++, isVolatile, resendUnchanged,
+			type != null && type.isSolo());
 		if (p.stateKey != null)
 		{
 			// Unchanged since the last accepted send, and no other version pending or in flight: nothing to do.
@@ -292,7 +294,7 @@ public class EventSender
 			done.complete(null);
 			return done;
 		}
-		Batch batch = takeBatch();
+		Batch batch = takeBatch(force);
 		if (batch == null)
 		{
 			done.complete(null);
@@ -308,8 +310,11 @@ public class EventSender
 		send(batch, new CompletableFuture<>());
 	}
 
-	/** Must hold the lock. Removes everything pending for one account, oldest account first. */
-	private Batch takeBatch()
+	/**
+	 * Must hold the lock. Removes the next request's events for one account, oldest account first: up to
+	 * {@link #MAX_EVENTS_PER_REQUEST} events, or one solo event alone.
+	 */
+	private Batch takeBatch(boolean finalFlush)
 	{
 		states.values().removeIf(p -> !p.resendUnchanged && p.dataJson.equals(lastSentState.get(p.stateKey)));
 
@@ -327,11 +332,57 @@ public class EventSender
 			return null;
 		}
 
+		// Solo events (loot_history) go in a request of their own. The oldest pending event decides: a solo one is sent
+		// alone, otherwise a batch of everything else, so neither can hold the other back for more than one request.
+		// The final flush prefers the other events (e.g. logout); a solo snapshot left then is resent next session.
+		Pending oldestSolo = null;
+		long oldestOther = Long.MAX_VALUE;
+		for (Pending p : history)
+		{
+			if (p.account.getHash().equals(hash))
+			{
+				if (p.solo)
+				{
+					oldestSolo = oldestSolo == null || p.seq < oldestSolo.seq ? p : oldestSolo;
+				}
+				else
+				{
+					oldestOther = Math.min(oldestOther, p.seq);
+				}
+			}
+		}
+		for (Pending p : states.values())
+		{
+			if (p.account.getHash().equals(hash))
+			{
+				if (p.solo)
+				{
+					oldestSolo = oldestSolo == null || p.seq < oldestSolo.seq ? p : oldestSolo;
+				}
+				else
+				{
+					oldestOther = Math.min(oldestOther, p.seq);
+				}
+			}
+		}
+		if (oldestSolo != null && (oldestOther == Long.MAX_VALUE || (!finalFlush && oldestSolo.seq < oldestOther)))
+		{
+			if (oldestSolo.stateKey != null)
+			{
+				states.remove(oldestSolo.stateKey);
+			}
+			else
+			{
+				history.remove(oldestSolo);
+			}
+			return new Batch(accountFor(hash, oldestSolo.account), Collections.singletonList(oldestSolo));
+		}
+
 		List<Pending> taken = new ArrayList<>();
 		for (Iterator<Pending> it = history.iterator(); it.hasNext() && taken.size() < MAX_EVENTS_PER_REQUEST; )
 		{
 			Pending p = it.next();
-			if (p.account.getHash().equals(hash))
+			if (p.account.getHash().equals(hash) && !p.solo)
 			{
 				taken.add(p);
 				it.remove();
@@ -340,20 +391,20 @@ public class EventSender
 		for (Iterator<Pending> it = states.values().iterator(); it.hasNext() && taken.size() < MAX_EVENTS_PER_REQUEST; )
 		{
 			Pending p = it.next();
-			if (p.account.getHash().equals(hash))
+			if (p.account.getHash().equals(hash) && !p.solo)
 			{
 				taken.add(p);
 				it.remove();
 			}
 		}
 		taken.sort(Comparator.comparingLong(p -> p.seq));
+		return new Batch(accountFor(hash, taken.get(taken.size() - 1).account), taken);
+	}
 
-		AccountRef account = taken.get(taken.size() - 1).account;
-		if (onlineAccount != null && onlineAccount.getHash().equals(hash))
-		{
-			account = onlineAccount;
-		}
-		return new Batch(account, taken);
+	/** Must hold the lock. The account details to send: the online account's newest ones when it is that account. */
+	private AccountRef accountFor(String hash, AccountRef fallback)
+	{
+		return onlineAccount != null && onlineAccount.getHash().equals(hash) ? onlineAccount : fallback;
 	}
 
 	/** Must hold the lock. */
@@ -581,11 +632,14 @@ public class EventSender
 		final long seq;
 		final boolean isVolatile;
 		final boolean resendUnchanged;
+		/** Sent in a request of its own ({@link EventType#isSolo()}). */
+		final boolean solo;
 
 		Pending(AccountRef account, IngestEvent event, String stateKey, String dataJson, long seq, boolean isVolatile,
-			boolean resendUnchanged)
+			boolean resendUnchanged, boolean solo)
 		{
 			this.resendUnchanged = resendUnchanged;
+			this.solo = solo;
 			this.account = account;
 			this.event = event;
 			this.stateKey = stateKey;

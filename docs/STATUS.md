@@ -32,9 +32,10 @@
 
 ## Honest state
 
-- `./gradlew --no-daemon cleanTest build` passes on JDK 11: 160 unit tests, 0 failures, no javac warnings.
+- `./gradlew --no-daemon clean build` passes on JDK 11: 177 unit tests, 0 failures, no javac warnings.
 - **Restart the developer client to pick up the latest work.** Built and unit-tested but never run in the game:
-  the loot history import (`loot_history`) and the new loot debug logging. Storages, loadouts, kingdom, diaries
+  the loot history import (`loot_history`, now trimmed to the server's limits and sent in a request of its own) and
+  the new loot debug logging. Storages, loadouts, kingdom, diaries
   etc. reached the server in the owner's run (2026-11-14); no live `loot` has been seen yet because the owner had
   not killed anything since installing.
 - First in-game run on 2026-11-14 (see below): the basics work against the real game; most of the checklist is
@@ -171,7 +172,8 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
 35. [ ] **Loot history import.** ~10 s after login: one `loot_history` with the sources and totals the Loot
     Tracker panel shows (kills, items); PvP sources merged as "Player"; after a kill, a new snapshot within a few
     minutes of RuneLite's config sync (or at logout). Log line "loot history with N sources, B bytes".
-    Look at `LootHistoryCollector`.
+    A history over the server's limits sends the newest sources with one info line "left out N of M sources and
+    I of J items". Look at `LootHistoryCollector`, `LootHistoryLimiter`.
 
 Also check: the plugin's Data toggles stop each group; turning one back on resends that group's snapshots.
 
@@ -203,8 +205,14 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
   quest-point / XP requirement for the next visit is not modelled.
 - Loot history depends on RuneLite's Loot Tracker plugin: with it disabled nothing new is stored (the old records
   are still sent); its "Remember loot" setting only controls loading into its panel and pruning records older than
-  365 days, not saving. A history over 1.5 MB is not sent (logged); a 600-source × 25-item account measured
-  1.33 MB in tests. If real accounts get near that, the contract needs a split (parts or per-source events).
+  365 days, not saving. The server rejects a snapshot over 2,000 sources, 400 items in one source or 50,000 items
+  (400) and bodies over 2 MiB (413), so `LootHistoryLimiter` trims instead of skipping: per source the 400 most
+  valuable items (qty × GE price, then quantity), then the newest sources (by `lastAt`; none = oldest) while within
+  those counts and 1,500,000 bytes of `data`; one info line says what was left out. `loot_history` is always sent in
+  a request of its own (`EventType.isSolo`), so the body is the snapshot plus a small envelope. Left-out sources lose
+  their history on the server (all-time views fall back to tracked loot for them). A 600-source × 25-item account
+  measured 1.33 MB in tests (nothing trimmed); about 680 such sources would start trimming. Trimming has only been
+  checked against generated records, not a real account's Loot Tracker data.
 - Kill counts depend on RuneLite's Chat Commands plugin; raid/chest/clue loot on the Loot Tracker plugin.
 - Collection log `clog_item` depends on the game's chat notification; its `id` only when the name was seen recently.
 - Timers list every patch the player has stood next to, also EMPTY ones (e.g. Lumbridge hops and tree after

@@ -7,7 +7,8 @@ Read `docs/STATUS.md` first (state, owner decisions, in-game checklist). Wire fo
 Package `com.osrstracker`, Java 11, Gradle project in this folder (Plugin Hub template layout).
 
 - `TrackerSyncPlugin`, `TrackerSyncConfig` — lifecycle/event wiring; config group `trackersync` (hidden key `clientId`).
-- `EventSender` — queue, batching, retry/backoff, 500 cap, newest snapshot per key, unchanged suppression, volatile `status`, heartbeat.
+- `EventSender` — queue, batching, retry/backoff, 500 cap, newest snapshot per key, unchanged suppression, volatile `status`,
+  solo events (`loot_history` alone in its request), heartbeat.
 - `SessionTracker` — login/logout, account ref, world exclusions; every emit goes through it. One `login` per real
   game login (never on region loads, hops, reconnects or plugin restarts); `pause()` on plugin stop sends no logout.
 - `Consent` — one-time "Allow sending to this server" consent bound to the URL host (hidden key `consentHost`).
@@ -19,7 +20,7 @@ Package `com.osrstracker`, Java 11, Gradle project in this folder (Plugin Hub te
   `CombatAchievementCollector`, `timers/TimersCollector`, `StorageCollector` (rune pouch, quiver, plank sack, potion
   and group storage), `BagCollector` (chat-tracked bags), `DepositCollector` (deposit box → `bank_deposit`),
   `LoadoutCollector` (Inventory Setups saved config), `KingdomCollector` (Miscellania), `LootHistoryCollector`
-  (core Loot Tracker's stored `loottracker` records → `loot_history`).
+  (core Loot Tracker's stored `loottracker` records → `loot_history`; `LootHistoryLimiter` trims it to the server's limits).
 - `DiaryTasks` + `src/main/resources/com/osrstracker/diary_tasks.json` — per-task diary names and done-bits (generated
   from the Group Ironmen Tracker site data, BSD-2; cross-checked against WikiSync's spec, MIT).
 - `ContainerPublisher` — shared debounced emission of every `container` snapshot (capture now, send after a quiet period).

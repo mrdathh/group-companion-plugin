@@ -1,4 +1,4 @@
-Protocol v1, plugin 0.1.0, snapshot of 2026-11-14 (updated for storages, deposit box, loadouts, diary tasks, CA tasks, slayer detail, kingdom, Tears of Guthix). The source of truth is the tracker-sync-server project's `docs/PROTOCOL.md` and `shared/protocol.ts`; this file is the plugin's half as built, and must be kept in step with them.
+Protocol v1, plugin 0.1.0, snapshot of 2026-11-14 (updated for storages, deposit box, loadouts, diary tasks, CA tasks, slayer detail, kingdom, Tears of Guthix, loot history limits). The source of truth is the tracker-sync-server project's `docs/PROTOCOL.md` and `shared/protocol.ts`; this file is the plugin's half as built, and must be kept in step with them.
 
 # Tracker Sync plugin → server protocol
 
@@ -41,7 +41,7 @@ Optional fields are omitted when unknown. Fields typed `X | null` in the contrac
 | 401 | Stop sending (also heartbeats) until the URL or token changes; warn once in chat. Queued history events are kept (cap 500). |
 | 5xx, 408, 429, network error, 15 s call timeout | Keep and retry with backoff 5, 10, 20, 40, 60, 60 … s. |
 
-One request in flight at a time; one account per request; at most 250 events per request (the rest follows at once).
+One request in flight at a time; one account per request; at most 250 events per request (the rest follows at once). `loot_history` always travels in a request of its own (no other events): when it is the oldest pending event it is sent alone, otherwise the other events go first as one batch and it follows in the next request; the final flush at shutdown sends the other events (an unsent `loot_history` is sent again next session). The server limits bodies to 2 MiB (2,097,152 bytes; 413).
 
 ## Queue
 
@@ -62,7 +62,7 @@ Nothing is sent until a server URL and a token are set and the player has ticked
 | `logout` | Login screen, client shutdown (waits for the final request), or a hop to an excluded world; only if a `login` was sent for this session. Not on plugin stop. Queued loot and captured containers go out before it. |
 | `loot` | Held until the end of the game tick (so a kill-count message of the same tick can be attached), then sent; the request leaves about 50 ms later. |
 | `level_up`, `death` | At once. |
-| `loot_history` | 10 s after login, then 2 s after the core Loot Tracker's stored records (`loottracker` RS-profile keys `drops_*`) change, at most once per 60 s; unchanged snapshots are not resent. Not sent over 1.5 MB (logged instead). |
+| `loot_history` | 10 s after login, then 2 s after the core Loot Tracker's stored records (`loottracker` RS-profile keys `drops_*`) change, at most once per 60 s; unchanged snapshots are not resent. Trimmed to the server's limits when over them (see below), never skipped. |
 | `clog_item` | On the next game tick after the chat message. |
 | `skills` | 3 s after the last XP change, at most once per 10 s, at most ~10 s late while XP keeps changing. |
 | `container` inventory, equipment | 2 s after the last change (at most 15 s late while it keeps changing); also captured at login. |
@@ -96,7 +96,7 @@ Items (`Item`): `{ id, qty, name, ge, ha }`. `id` is canonical (un-noted; placeh
 
 - **`login`, `logout`**: `{ "world": 302 }`.
 - **`loot`**: `{ "source": { "type": "NPC|EVENT|PICKPOCKET|PLAYER|UNKNOWN", "name", "id"?, "combatLevel"? }, "killCount"?, "items": [Item], "totalGe" }`. `items` merges stacks of one id; `totalGe` = Σ qty × ge. Loot with no items is not sent. PvP loot: `name` is `"Player"`, no id or level.
-- **`loot_history`** (state): `{ "sources": [ { type, name, kills, firstAt?, lastAt?, items: [Item] } ] }` — RuneLite core Loot Tracker's stored totals per source for the current profile (`ConfigLoot` JSON: type, name, kills, first/last epoch millis, drops = [id, qty, …]); canonical ids, current prices; all PLAYER sources merged into one source named "Player".
+- **`loot_history`** (state): `{ "sources": [ { type, name, kills, firstAt?, lastAt?, items: [Item] } ] }` — RuneLite core Loot Tracker's stored totals per source for the current profile (`ConfigLoot` JSON: type, name, kills, first/last epoch millis, drops = [id, qty, …]); canonical ids, current prices; all PLAYER sources merged into one source named "Player". Server limits (inclusive): at most 2,000 sources, 400 items per source, 50,000 items in all, names at most 200 characters (over any: 400 for the whole request). The plugin trims to fit, deterministically: names cut to 200; per source the 400 most valuable items (qty × `ge`, then highest qty, then lowest id); then the newest sources by `lastAt` (none = oldest; ties by name, then type) while within 2,000 sources, 50,000 items and 1,500,000 bytes of serialized `data`; kept sources stay sorted by type and name. One info log line says how many sources and items were left out. Left-out sources lose their history on the server (the snapshot replaces the previous one).
 - **`level_up`**: `{ "skill": "Woodcutting", "level": 70 }` (real level; never for the login burst).
 - **`death`**: `{ "killer"?: { "type": "NPC|PLAYER", "name"?, "id"? }, "location": { x, y, plane, regionId } }`. A player killer has no name or id; `killer` is omitted when unknown.
 - **`clog_item`**: `{ "name": "Pet snakeling", "id"? }` (`id` only if the name was seen in recent loot or containers).

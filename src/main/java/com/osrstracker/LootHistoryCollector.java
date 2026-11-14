@@ -9,7 +9,6 @@ import com.osrstracker.model.EventType;
 import com.osrstracker.model.IngestEvent;
 import com.osrstracker.model.Item;
 import com.osrstracker.model.LootHistoryData;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -37,8 +36,9 @@ import net.runelite.client.events.ConfigChanged;
  *
  * <p>Sent 10 s after login and 2 s after those keys change, at most once per 60 s; the sender drops unchanged
  * snapshots. PvP sources (named after other players) are merged into one source "Player". Items get canonical ids,
- * names and current prices on the client thread. A snapshot over {@link #MAX_BYTES} is not sent (logged), never
- * truncated.
+ * names and current prices on the client thread. A history over the server's limits is trimmed to fit (newest sources,
+ * most valuable items; one info line says what was left out), see {@link LootHistoryLimiter}. The sender puts this
+ * event in a request of its own ({@link EventType#isSolo()}).
  */
 @Slf4j
 @Singleton
@@ -49,7 +49,6 @@ public class LootHistoryCollector implements SessionTracker.Listener
 	static final long DELAY_MS = 2_000;
 	static final long MIN_INTERVAL_MS = 60_000;
 	static final long LOGIN_SETTLE_MS = 10_000;
-	static final int MAX_BYTES = 1_500_000;
 
 	/** One stored record, before item lookups. */
 	@Value
@@ -137,16 +136,21 @@ public class LootHistoryCollector implements SessionTracker.Listener
 			log.debug("Tracker Sync: no stored Loot Tracker history for this profile");
 			return;
 		}
-		LootHistoryData data = build(stored);
-		int bytes = gson.toJson(data).getBytes(StandardCharsets.UTF_8).length;
-		if (bytes > MAX_BYTES)
+		LootHistoryLimiter.Result fitted = LootHistoryLimiter.fit(build(stored), gson);
+		if (fitted.trimmed())
 		{
-			log.warn("Tracker Sync: loot history is {} bytes ({} sources), over the {} byte limit; not sent", bytes,
-				data.getSources().size(), MAX_BYTES);
+			log.info("Tracker Sync: loot history is over the server's limits ({} sources, {} items, {} items per source,"
+					+ " {} bytes); left out {} of {} sources and {} of {} items (kept the newest sources and the most valuable items)",
+				LootHistoryLimiter.MAX_SOURCES, LootHistoryLimiter.MAX_ITEMS, LootHistoryLimiter.MAX_ITEMS_PER_SOURCE,
+				LootHistoryLimiter.MAX_BYTES, fitted.getSourcesLeftOut(), fitted.getSourcesBefore(), fitted.getItemsLeftOut(),
+				fitted.getItemsBefore());
+		}
+		if (fitted.getData().getSources().isEmpty())
+		{
 			return;
 		}
-		log.debug("Tracker Sync: loot history with {} sources, {} bytes", data.getSources().size(), bytes);
-		session.emit(EventType.LOOT_HISTORY, data);
+		log.debug("Tracker Sync: loot history with {} sources, {} bytes", fitted.getData().getSources().size(), fitted.getBytes());
+		session.emit(EventType.LOOT_HISTORY, fitted.getData());
 	}
 
 	/** Client thread. Merges PvP sources into one anonymous "Player" source; sorted by type and name. */

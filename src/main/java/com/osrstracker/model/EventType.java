@@ -50,6 +50,15 @@ public enum EventType
 		return this == STATUS;
 	}
 
+	/**
+	 * Solo events travel in a request of their own, never batched with other events, so the request body is bounded by
+	 * that one event (contract: {@code loot_history} is sent alone; its size limits are in docs/PROTOCOL.md).
+	 */
+	public boolean isSolo()
+	{
+		return this == LOOT_HISTORY;
+	}
+
 	public static EventType fromWireName(String name)
 	{
 		for (EventType t : values())

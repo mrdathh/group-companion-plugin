@@ -137,6 +137,41 @@ public class LootHistoryCollectorTest
 	}
 
 	@Test
+	public void aHistoryOverTheLimitsIsSentTrimmedNotSkipped()
+	{
+		// 1,500 sources x 25 items is about 3.3 MB: over the byte limit, so the oldest sources are left out.
+		when(configManager.getRSProfileKey()).thenReturn("rsprofile.abc");
+		List<String> keys = new ArrayList<>();
+		for (int s = 0; s < 1500; s++)
+		{
+			StringBuilder drops = new StringBuilder();
+			for (int i = 0; i < 25; i++)
+			{
+				drops.append(i == 0 ? "" : ",").append(20000 + s * 25 + i).append(',').append(123456);
+			}
+			String key = "drops_NPC_Monster " + s;
+			keys.add(key);
+			when(configManager.getConfiguration("loottracker", "rsprofile.abc", key)).thenReturn("{\"type\":\"NPC\","
+				+ "\"name\":\"Some monster name " + s + "\",\"kills\":12345,\"first\":1600000000000,\"last\":" + (1700000000000L + s * 1000L)
+				+ ",\"drops\":[" + drops + "]}");
+		}
+		when(configManager.getRSProfileConfigurationKeys("loottracker", "rsprofile.abc", "drops_")).thenReturn(keys);
+		when(items.toItem(anyInt(), anyInt())).thenAnswer(inv -> new Item(inv.getArgument(0), inv.getArgument(1),
+			"A typical item name (u)", 1234567, 76543));
+
+		collector.emit();
+		ArgumentCaptor<Object> data = ArgumentCaptor.forClass(Object.class);
+		verify(session).emit(eq(EventType.LOOT_HISTORY), data.capture());
+		LootHistoryData sent = (LootHistoryData) data.getValue();
+		int bytes = RuneLiteAPI.GSON.toJson(sent).getBytes(StandardCharsets.UTF_8).length;
+		assertTrue(bytes + " bytes", bytes <= LootHistoryLimiter.MAX_BYTES);
+		assertTrue(sent.getSources().size() > 500 && sent.getSources().size() < 1500);
+		// The newest source (highest "last") is kept, the oldest is not.
+		assertTrue(sent.getSources().stream().anyMatch(s -> s.getName().equals("Some monster name 1499")));
+		assertTrue(sent.getSources().stream().noneMatch(s -> s.getName().equals("Some monster name 0")));
+	}
+
+	@Test
 	public void realisticWorstCaseSize()
 	{
 		// A long-played account: 600 sources with on average 25 distinct items each, realistic name lengths.
@@ -155,6 +190,6 @@ public class LootHistoryCollectorTest
 			"A typical item name (u)", 1234567, 76543));
 		int bytes = RuneLiteAPI.GSON.toJson(collector.build(stored)).getBytes(StandardCharsets.UTF_8).length;
 		System.out.println("loot_history worst case (600 sources x 25 items): " + bytes + " bytes");
-		assertTrue(bytes + " bytes", bytes < LootHistoryCollector.MAX_BYTES);
+		assertTrue(bytes + " bytes", bytes < LootHistoryLimiter.MAX_BYTES);
 	}
 }
