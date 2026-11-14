@@ -1,5 +1,6 @@
 package com.osrstracker;
 
+import com.google.common.collect.ImmutableMap;
 import com.osrstracker.model.EventType;
 import com.osrstracker.model.Item;
 import com.osrstracker.model.LootData;
@@ -257,21 +258,34 @@ public class LootCollector implements SessionTracker.Listener
 		return lootTracker != null && pluginManager.isPluginActive(lootTracker);
 	}
 
+	/**
+	 * Loot source names whose kill-count chat line uses another name (normalized). RuneLite files the Gauntlet
+	 * reward as the Hunllef NPC, but the game's line is "Your (Corrupted) Gauntlet completion count is: N"; the
+	 * Fortis Colosseum reward's line names its final boss.
+	 */
+	static final Map<String, String> KILL_COUNT_ALIASES = ImmutableMap.of(
+		"corrupted hunllef", "corrupted gauntlet",
+		"crystalline hunllef", "gauntlet",
+		"fortis colosseum", "sol heredit");
+
 	/** Kill count for this loot source, consumed so it is attached to one loot event only. */
 	synchronized Integer takeKillCount(String sourceName)
 	{
 		String name = normalize(sourceName);
+		name = KILL_COUNT_ALIASES.getOrDefault(name, name);
 		long now = time.nowMillis();
+		killCounts.values().removeIf(kc -> now - kc.atMillis > KC_MAX_AGE_MS);
+		// An exact name first, so "gauntlet" never takes the "corrupted gauntlet" count or the other way round.
+		KillCount exact = killCounts.remove(name);
+		if (exact != null)
+		{
+			return exact.count;
+		}
 		for (Iterator<Map.Entry<String, KillCount>> it = killCounts.entrySet().iterator(); it.hasNext(); )
 		{
 			Map.Entry<String, KillCount> e = it.next();
-			if (now - e.getValue().atMillis > KC_MAX_AGE_MS)
-			{
-				it.remove();
-				continue;
-			}
 			String kcName = e.getKey();
-			if (kcName.length() >= 3 && (name.equals(kcName) || name.contains(kcName) || kcName.contains(name)))
+			if (kcName.length() >= 3 && (name.contains(kcName) || kcName.contains(name)))
 			{
 				it.remove();
 				return e.getValue().count;

@@ -142,6 +142,35 @@ public class LootCollectorTest
 	}
 
 	@Test
+	public void gauntletCountsAttachToTheHunllef()
+	{
+		// Both counts pending at once: each Hunllef takes its own, not the other one's.
+		collector.onChatMessage(new ChatMessage(null, ChatMessageType.GAMEMESSAGE, "", "Your Gauntlet completion count is: <col=ff0000>7</col>.", null, 0));
+		collector.onChatMessage(new ChatMessage(null, ChatMessageType.GAMEMESSAGE, "", "Your Corrupted Gauntlet completion count is: <col=ff0000>42</col>.", null, 0));
+		assertEquals(Integer.valueOf(42), collector.takeKillCount("Corrupted Hunllef"));
+		assertEquals(Integer.valueOf(7), collector.takeKillCount("Crystalline Hunllef"));
+		assertNull(collector.takeKillCount("Corrupted Hunllef"));
+
+		collector.onChatMessage(new ChatMessage(null, ChatMessageType.GAMEMESSAGE, "", "Your Sol Heredit kill count is: 2.", null, 0));
+		assertEquals(Integer.valueOf(2), collector.takeKillCount("Fortis Colosseum"));
+	}
+
+	@Test
+	public void chestSourcesMatchTheirCountLines()
+	{
+		collector.onChatMessage(new ChatMessage(null, ChatMessageType.GAMEMESSAGE, "", "Your Barrows chest count is: 5.", null, 0));
+		assertEquals(Integer.valueOf(5), collector.takeKillCount("Barrows"));
+		collector.onChatMessage(new ChatMessage(null, ChatMessageType.GAMEMESSAGE, "", "Your subdued Wintertodt count is: 9.", null, 0));
+		assertEquals(Integer.valueOf(9), collector.takeKillCount("Supply crate (Wintertodt)"));
+		collector.onChatMessage(new ChatMessage(null, ChatMessageType.GAMEMESSAGE, "", "Your Tempoross kill count is: 3.", null, 0));
+		assertEquals(Integer.valueOf(3), collector.takeKillCount("Reward pool (Tempoross)"));
+		collector.onChatMessage(new ChatMessage(null, ChatMessageType.GAMEMESSAGE, "", "Your Lunar Chest count is: 4.", null, 0));
+		assertEquals(Integer.valueOf(4), collector.takeKillCount("Lunar Chest"));
+		collector.onChatMessage(new ChatMessage(null, ChatMessageType.GAMEMESSAGE, "", "Your completed Tombs of Amascut: Expert Mode count is: 6.", null, 0));
+		assertEquals(Integer.valueOf(6), collector.takeKillCount("Tombs of Amascut"));
+	}
+
+	@Test
 	public void nothingWhenLootIsDisabledOrEmpty()
 	{
 		when(config.sendLoot()).thenReturn(false);

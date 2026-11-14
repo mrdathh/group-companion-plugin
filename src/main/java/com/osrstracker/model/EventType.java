@@ -15,6 +15,7 @@ public enum EventType
 	QUESTS("quests", true),
 	DIARIES("diaries", true),
 	COLLECTION_LOG("collection_log", true),
+	COLLECTION_LOG_SUMMARY("collection_log_summary", true),
 	/** Volatile: never queued while the server is unreachable. */
 	STATUS("status", true),
 	TIMERS("timers", true),

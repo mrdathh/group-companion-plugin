@@ -248,7 +248,7 @@ public class TrackerSyncPlugin extends Plugin
 		}
 	}
 
-	/** Collectors whose snapshots belong to a data-group toggle (loot and collection log have none to resend). */
+	/** Collectors whose snapshots belong to a data-group toggle. */
 	List<SessionTracker.Listener> collectorsFor(String key)
 	{
 		switch (key)
@@ -257,6 +257,8 @@ public class TrackerSyncPlugin extends Plugin
 				return Collections.singletonList(lootHistoryCollector);
 			case "sendSkills":
 				return Collections.singletonList(skillsCollector);
+			case "sendCollectionLog":
+				return Collections.singletonList(collectionLogCollector);
 			case "sendItems":
 				return Collections.singletonList(containerCollector);
 			case "sendQuests":

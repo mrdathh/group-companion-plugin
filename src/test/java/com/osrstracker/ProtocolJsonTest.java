@@ -7,6 +7,7 @@ import com.osrstracker.model.AccountRef;
 import com.osrstracker.model.ClientInfo;
 import com.osrstracker.model.ClogItemData;
 import com.osrstracker.model.CollectionLogData;
+import com.osrstracker.model.CollectionLogSummaryData;
 import com.osrstracker.model.ContainerData;
 import com.osrstracker.model.ContainerItem;
 import com.osrstracker.model.DeathData;
@@ -252,6 +253,31 @@ public class ProtocolJsonTest
 		assertJson(envelope("collection_log", "{\"items\":{\"12921\":1,\"4151\":3},"
 			+ "\"names\":{\"12921\":\"Pet snakeling\",\"4151\":\"Abyssal whip\"},\"obtained\":2,\"total\":1692}"),
 			event(EventType.COLLECTION_LOG, new CollectionLogData(items, names, 2, 1692)));
+	}
+
+	@Test
+	public void collectionLogSummary()
+	{
+		CollectionLogSummaryData d = new CollectionLogSummaryData(185, 1700,
+			Arrays.asList(new CollectionLogSummaryData.Tab("Bosses", 120, 500), new CollectionLogSummaryData.Tab("Other", 20, 400)),
+			Arrays.asList(new CollectionLogSummaryData.Recent(12921, "2026-11-14T00:00:00.000Z"),
+				new CollectionLogSummaryData.Recent(4151, null)),
+			"chat");
+		assertJson(envelope("collection_log_summary", "{\"obtained\":185,\"total\":1700,"
+			+ "\"tabs\":[{\"tab\":\"Bosses\",\"obtained\":120,\"total\":500},{\"tab\":\"Other\",\"obtained\":20,\"total\":400}],"
+			+ "\"recent\":[{\"itemId\":12921,\"at\":\"2026-11-14T00:00:00.000Z\"},{\"itemId\":4151}],"
+			+ "\"newItemNotification\":\"chat\"}"),
+			event(EventType.COLLECTION_LOG_SUMMARY, d));
+		assertEquals("collection_log_summary", EventType.stateKey(event(EventType.COLLECTION_LOG_SUMMARY, null)));
+	}
+
+	@Test
+	public void collectionLogSummaryWithNothingReadableSendsEmptyListsAndNull()
+	{
+		CollectionLogSummaryData d = new CollectionLogSummaryData(0, 1700, Collections.emptyList(), Collections.emptyList(), null);
+		assertJson(envelope("collection_log_summary",
+			"{\"obtained\":0,\"total\":1700,\"tabs\":[],\"recent\":[],\"newItemNotification\":null}"),
+			event(EventType.COLLECTION_LOG_SUMMARY, d));
 	}
 
 	private static final String LOCATION_JSON = "{\"x\":3222,\"y\":3218,\"plane\":0,\"regionId\":12850,\"instanced\":false,\"onBoat\":false}";

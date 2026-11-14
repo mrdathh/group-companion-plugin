@@ -1,4 +1,4 @@
-# Status (2026-11-14)
+# Status (2026-11-15)
 
 ## Owner decisions (2026-11-14)
 
@@ -32,7 +32,17 @@
 
 ## Honest state
 
-- `./gradlew --no-daemon clean build` passes on JDK 11: 177 unit tests, 0 failures, no javac warnings.
+- `./gradlew --no-daemon clean build` passes on JDK 11: 195 unit tests, 0 failures, no javac warnings.
+- **Collection log rework (2026-11-15), built and unit-tested, not yet run in the game.** The owner's logs showed the
+  whole-log read probably never captured anything: the Group Ironmen Tracker (enabled in the same client, registered
+  first) also opens the log's search when the log opens, so the item draws (script 4100) came before this plugin was
+  listening, and this plugin's own click then likely toggled the search off. Now collection starts when the log is set
+  up (script 7797, pre-fire, before any plugin reacts), every draw is taken whoever opened the search, this plugin
+  opens the search only if nothing was drawn by the next tick and the search varbit (`FLOATER_IS_SEARCHING`) is off,
+  and never toggles it off. The first read of a session is not rate-limited. An info line "collection log read: N
+  items, X/Y obtained" on success; debug lines name every skip reason. New: `collection_log_summary` at login (counts
+  readable without opening the log), new items also from the game's popup (deduplicated with the chat line), and the
+  Gauntlet / Corrupted Gauntlet / Fortis Colosseum kill counts attach to their loot.
 - **Restart the developer client to pick up the latest work.** Built and unit-tested but never run in the game:
   the loot history import (`loot_history`, now trimmed to the server's limits and sent in a request of its own) and
   the new loot debug logging. Storages, loadouts, kingdom, diaries
@@ -108,9 +118,22 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     real level; no level-ups after login or hop. Look at `SkillsCollector`.
 11. [ ] **Death.** `death` with real location (also in an instance / on a boat) and the NPC killer; PvP killer has
     no name. Look at `DeathCollector`.
-12. [ ] **Collection log.** Open your own log: a `collection_log` with `items`, `names`, `obtained`, `total` matching
-    the log header; opening again within 500 ticks sends nothing; a house adventure log never sends. Get a new
-    log item: `clog_item` (needs the in-game chat notification). Look at `CollectionLogCollector`.
+12. [ ] **Collection log (reworked 2026-11-15).** Keep the Group Ironmen Tracker **on** (the case that failed).
+    a) **Summary at login:** within ~3–10 s of logging in, a `collection_log_summary` whose `obtained`/`total` match
+    the log header, `tabs` matching each tab's counts (Bosses, Raids, Clues, Minigames, Other), `recent` = the log's
+    recent items with plausible dates (`at` = the day, 00:00 UTC; compare with "today"/"N days ago" in the log), and
+    `newItemNotification` matching Settings → "Collection log - New addition notification" (switch it between the
+    options once and check each: `off`, `chat`, `popup`, `both`; **the popup/both values 2/3 are inferred**). If no
+    summary arrives, look for debug lines "Collection log summary: counts not loaded yet".
+    b) **Whole log:** open your own log once: the client log shows the info line "Tracker Sync: collection log read:
+    N items, X/Y obtained" and a `collection_log` arrives with `items`/`names`/`obtained`/`total` matching; the
+    search box must not end up toggled off by the two plugins. With the Group Ironmen Tracker off, the same works
+    (this plugin opens the search itself). Opening again within 500 ticks sends nothing (debug "last read N ticks
+    ago"); a house adventure log never sends (debug "house adventure log"). If nothing arrives, the debug lines
+    "Collection log read skipped: …" say why.
+    c) **New item:** with the setting on "chat", a new log item sends one `clog_item`; on "popup" also one; on "both"
+    still exactly one. `id` only when the item was in recent loot/containers, otherwise name only. The summary
+    updates a few seconds later (new count, new recent item). Look at `CollectionLogCollector`.
 13. [x] **Quests and diaries.** (snapshots confirmed; diary tiers not checked against the journal) Quest states match the quest list; `questPoints` correct; a Karamja tier and a
     claimed/unclaimed tier show the right `complete`. Look at `QuestDiaryCollector`.
 14. [ ] **Farming patch and bird house.** (EMPTY patches observed; planting not checked) Plant a herb (stand by the patch a tick): within 30 s a `timers` entry
@@ -214,7 +237,23 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
   measured 1.33 MB in tests (nothing trimmed); about 680 such sources would start trimming. Trimming has only been
   checked against generated records, not a real account's Loot Tracker data.
 - Kill counts depend on RuneLite's Chat Commands plugin; raid/chest/clue loot on the Loot Tracker plugin.
-- Collection log `clog_item` depends on the game's chat notification; its `id` only when the name was seen recently.
+- Collection log `clog_item` depends on the game's notification setting (chat line or popup; "off" sends nothing);
+  its `id` only when the name was seen recently (the server resolves name-only items).
+- `collection_log_summary`: the per-tab and recent-item varps are assumed to arrive with the other player vars at login
+  (no client script writes them; Dink polls the total the same way) but this is unverified in game; while obtained and
+  total read 0/0 the plugin retries for about 2 minutes and then sends nothing until one of them changes. Recent-item
+  dates are day precision: the game stores a day number (the log shows "N days ago" = current day number minus it),
+  converted to a date with the game's current day number against today's UTC date; near midnight UTC the date can be
+  a day off if the game's day does not roll at 00:00 UTC. The notification setting values 2 (popup) / 3 (both) are
+  inferred from the option order; 0 = off and 1 = chat are as RuneLite's Screenshot plugin and Dink read them.
+- Whole-log read: the search varbit used to decide "already on" (`FLOATER_IS_SEARCHING`) was found in the game's
+  scripts (set by the log's search-open script), not tested in game. A read with fewer than half the obtained count
+  drawn is treated as partial and not sent.
+- Loot kill counts are matched by name: chest-style sources checked against their count lines: Barrows, Wintertodt,
+  Tempoross, Lunar Chest, Fractured Archive, raids (all modes), Gauntlet (via the Hunllef aliases) and Fortis
+  Colosseum ("Sol Heredit", alias from memory, unverified). Not checked (may not attach a count): Grotesque Guardians
+  (loot may be filed as "Dusk"), Royal Titans (loot under a titan's name?), Hallowed Sepulchre ("Hallowed Sack"),
+  Doom of Mokhaiotl.
 - Timers list every patch the player has stood next to, also EMPTY ones (e.g. Lumbridge hops and tree after
   walking past). The app may want to hide EMPTY entries; the plugin could also omit them (owner's call).
 - A plugin stop/start resumes without a new `login`; if the player logged out and back in with the plugin
