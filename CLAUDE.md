@@ -8,7 +8,10 @@ Package `com.osrstracker`, Java 11, Gradle project in this folder (Plugin Hub te
 
 - `TrackerSyncPlugin`, `TrackerSyncConfig` — lifecycle/event wiring; config group `trackersync` (hidden key `clientId`).
 - `EventSender` — queue, batching, retry/backoff, 500 cap, newest snapshot per key, unchanged suppression, volatile `status`, heartbeat.
-- `SessionTracker` — login/logout, account ref, world exclusions; every emit goes through it.
+- `SessionTracker` — login/logout, account ref, world exclusions; every emit goes through it. One `login` per real
+  game login (never on region loads, hops, reconnects or plugin restarts); `pause()` on plugin stop sends no logout.
+- `Consent` — one-time "Allow sending to this server" consent bound to the URL host (hidden key `consentHost`).
+  URL/token/consent edits are applied by `TrackerSyncPlugin` 2 s after the last edit.
 - `Throttle`, `TimeSource` — debounce/min-interval/max-wait on the injected executor; replaceable clock for tests.
 - `ItemMapper`, `LocationReader`, `HouseTracker` — item values; real-world location (instances, boats, house).
 - Collectors (one per data group): `LootCollector`, `SkillsCollector`, `ContainerCollector`, `QuestDiaryCollector`,
@@ -39,7 +42,8 @@ game input breaks Jagex rules). Ask the owner to run it and follow `docs/STATUS.
 - No reflection, JNI/JNA, subprocesses, `java.io` file access, dynamic code loading, or Java serialization.
 - Nothing about other players (no names of PvP victims/killers; `interacting` is NPCs only). No local ports.
   No credentials read or sent.
-- Send nothing until URL and token are set; nothing on excluded worlds.
+- Send nothing until URL and token are set and consent is ticked; nothing on excluded worlds. Do not put a
+  `warning` on text fields (RuneLite shows it on every focus loss); the warning sits on the consent checkbox.
 - Use `net.runelite.api.gameval` constants; keep deprecation warnings at zero.
 - Ported code keeps its licence notice and is listed in `THIRD_PARTY_NOTICES.md`.
 

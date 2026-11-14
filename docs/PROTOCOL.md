@@ -34,7 +34,7 @@ Optional fields are omitted when unknown. Fields typed `X | null` in the contrac
 | Status | Plugin reaction |
 | --- | --- |
 | 2xx | Drop the events; remember state snapshots as sent. |
-| 400, 413, any other 4xx except below | Drop the events, log once. |
+| 400, 413, any other 4xx except below | Drop the events (the whole batch), log once with the event types and the server's error text. |
 | 401 | Stop sending (also heartbeats) until the URL or token changes; warn once in chat. Queued history events are kept (cap 500). |
 | 5xx, 408, 429, network error, 15 s call timeout | Keep and retry with backoff 5, 10, 20, 40, 60, 60 … s. |
 
@@ -51,12 +51,12 @@ One request in flight at a time; one account per request; at most 250 events per
 
 ## When things are sent
 
-Nothing is sent until both a server URL and a token are set, and nothing on worlds of type SEASONAL, DEADMAN, FRESH_START_WORLD, TOURNAMENT_WORLD, BETA_WORLD, NOSAVE_MODE, QUEST_SPEEDRUNNING or PVP_ARENA. Each data group has a config toggle (deaths, login and logout have none).
+Nothing is sent until a server URL and a token are set and the player has ticked "Allow sending to this server" (consent, remembered per URL host; a different host withdraws it), and nothing on worlds of type SEASONAL, DEADMAN, FRESH_START_WORLD, TOURNAMENT_WORLD, BETA_WORLD, NOSAVE_MODE, QUEST_SPEEDRUNNING or PVP_ARENA. Each data group has a config toggle (deaths, login and logout have none).
 
 | Type | When (as built) |
 | --- | --- |
-| `login` | First game tick after login once the name and account hash are known; then every snapshot. Also sent again when the URL or token changes mid-session. |
-| `logout` | Login screen, plugin stop, client shutdown (waits for the final request), or a hop to an excluded world. Queued loot and captured containers go out before it. |
+| `login` | Once per real game login: the first game tick after logging in once the name and account hash are known, then every snapshot. Region loads (LOADING → LOGGED_IN), hops between allowed worlds and reconnects send nothing. After a hop back from an excluded world: once. Stopping and starting the plugin mid-session resumes without a login (snapshots are offered again). When the destination really changes mid-session (URL, token or consent, applied 2 s after the last edit): `login` and every snapshot again for the new destination, never a `logout`. |
+| `logout` | Login screen, client shutdown (waits for the final request), or a hop to an excluded world; only if a `login` was sent for this session. Not on plugin stop. Queued loot and captured containers go out before it. |
 | `loot` | Held until the end of the game tick (so a kill-count message of the same tick can be attached), then sent; the request leaves about 50 ms later. |
 | `level_up`, `death` | At once. |
 | `clog_item` | On the next game tick after the chat message. |
@@ -73,6 +73,8 @@ Nothing is sent until both a server URL and a token are set, and nothing on worl
 | `combat_achievements` | 5 s after login, then 1 s after a CA var changes, at most once per 5 s. |
 
 World hops between allowed worlds send no login/logout; later requests carry the new `account.world`.
+
+Switching a data-group setting on sends that group's current snapshots and nothing else.
 
 ## Event data
 

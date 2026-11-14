@@ -6,9 +6,13 @@ UI of its own beyond its settings, and it talks to nothing but the server URL yo
 
 ## Before anything is sent
 
-- Nothing is sent until you enter both a **Server URL** and a **Token** (the token is printed by your
-  server when your user is created). The token field asks for confirmation that data will be sent to that
-  URL, which RuneLite developers do not control or verify; that server also sees your IP address.
+- Nothing is sent until you enter a **Server URL** and a **Token** (printed by your server when your user
+  is created) **and** tick **Allow sending to this server**. Ticking it shows RuneLite's standard notice
+  that your IP address goes to a server not controlled or verified by RuneLite developers; you are asked
+  once. The answer is remembered (also across client restarts) for that server's host: retyping or
+  re-pasting the token or reopening the settings does not ask again. Changing the Server URL to a
+  **different host** unticks the box, nothing is sent there until you tick it again. If URL and token are
+  set but the box is not ticked, the plugin says so once in the game chat.
 - Nothing is sent on seasonal (Leagues), Deadman, fresh-start, tournament, beta, no-save,
   quest-speedrunning or PvP-arena worlds.
 - Nothing about other players is sent: PvP loot and player killers are sent without names, and the
@@ -30,7 +34,8 @@ Exact JSON shapes and timings: [docs/PROTOCOL.md](docs/PROTOCOL.md).
 | Timers | Farming patches and bird houses with predicted ready times | After login, then every 30 s |
 | Slayer, kill counts and combat achievements | Slayer task, points, streak; boss kill counts; combat achievement points and completed task count | After login, then when they change |
 
-Always sent while logged in: login and logout (with the world), deaths (with location and the killing NPC),
+Always sent while logged in: login (once per real game login) and logout (on logging out or closing the
+client; not when the plugin is merely switched off), deaths (with location and the killing NPC),
 and a heartbeat every 60 s when nothing else was sent. While the server is unreachable up to 500 events
 are kept and retried; live status is dropped instead.
 
@@ -44,7 +49,8 @@ in-game collection log chat notification setting.
 
 Configuration (wrench icon) > search "Tracker Sync":
 
-- **Server**: Server URL (default `http://127.0.0.1:8787`; use `https://` for anything not on this PC), Token.
+- **Server**: Server URL (default `http://127.0.0.1:8787`; use `https://` for anything not on this PC), Token,
+  Allow sending to this server (off until you tick it).
 - **Data to send**: Loot, Skills, Items, Quests and diaries, Collection log, Live status and location,
   Timers, Slayer kill counts and combat achievements.
 

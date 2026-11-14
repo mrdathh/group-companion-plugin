@@ -61,7 +61,12 @@ public class SessionTracker
 	private final List<Listener> listeners = new CopyOnWriteArrayList<>();
 
 	private volatile AccountRef account;
-	private volatile boolean loginSent;
+	/**
+	 * Hash of the account whose {@code login} was delivered to the queue for the current game login, with no
+	 * {@code logout} since. Survives a plugin stop/start (the instance is kept), so re-enabling the plugin does
+	 * not announce a second login. Cleared on the login screen and whenever a logout is sent.
+	 */
+	private volatile String announcedHash;
 	private boolean awaitingLogin;
 
 	@Inject
@@ -119,12 +124,14 @@ public class SessionTracker
 		switch (state)
 		{
 			case LOGGED_IN:
-				// Also fires after every region load; resolving is idempotent.
+				// Also after every region load (LOADING -> LOGGED_IN) and hop: resolving is idempotent and
+				// only starts a session when none is running.
 				awaitingLogin = true;
 				break;
 			case LOGIN_SCREEN:
 				awaitingLogin = false;
-				endSession();
+				endSession(true);
+				announcedHash = null;
 				break;
 			default:
 				break;
@@ -151,7 +158,7 @@ public class SessionTracker
 		AccountRef current = account;
 		if (current != null && (!allowed || !current.getHash().equals(next.getHash())))
 		{
-			endSession();
+			endSession(true); // hop to an excluded world, or a different account
 			current = null;
 		}
 		if (!allowed)
@@ -186,31 +193,48 @@ public class SessionTracker
 		}
 	}
 
-	/** URL or token changed. If a session is running, announce it to the (possibly new) server. */
+	/**
+	 * The destination (URL, token or consent) really changed (client thread). If a session is running, the
+	 * newly configured server is told about it: a {@code login} and every snapshot. Never a {@code logout}:
+	 * the old destination is simply no longer used.
+	 */
 	public void onServerConfigChanged()
 	{
 		AccountRef a = account;
 		if (a != null && sender.isConfigured())
 		{
+			announcedHash = null;
 			sendLogin(a);
 			listeners.forEach(Listener::onSessionStart);
 		}
 	}
 
-	/** Capture and emit every snapshot again (client thread). */
-	public void resnapshot()
+	/** Capture and emit one collector's snapshots again, e.g. after its data group was switched on (client thread). */
+	public void resnapshot(Listener listener)
 	{
-		if (account != null)
+		if (account != null && listener != null)
 		{
-			listeners.forEach(Listener::onSessionStart);
+			listener.onSessionStart();
 		}
 	}
 
-	/** Plugin stopped or client shutting down. */
+	/**
+	 * The plugin is being stopped while the game may still be running: flush what collectors hold, stop the
+	 * session, but send no {@code logout} (the player did not log out; the server marks the account offline
+	 * on its own after its timeout, and the next start resumes without a second {@code login}).
+	 */
+	public void pause()
+	{
+		awaitingLogin = false;
+		endSession(false);
+	}
+
+	/** The client is shutting down: a real end of the session, with {@code logout}. */
 	public void shutdown()
 	{
 		awaitingLogin = false;
-		endSession();
+		endSession(true);
+		announcedHash = null;
 	}
 
 	/** Re-check the login state, e.g. when the plugin starts while already logged in. */
@@ -247,17 +271,24 @@ public class SessionTracker
 	{
 		account = next;
 		sender.setOnlineAccount(next);
-		sendLogin(next);
+		if (!next.getHash().equals(announcedHash))
+		{
+			sendLogin(next);
+		}
 		listeners.forEach(Listener::onSessionStart);
 	}
 
+	/** Queue a login for the configured server; remembered only if it can actually be sent. */
 	private void sendLogin(AccountRef a)
 	{
-		loginSent = sender.isConfigured();
-		sender.enqueue(a, IngestEvent.create(EventType.LOGIN, new SessionData(a.getWorld()), time.now()));
+		if (sender.isConfigured())
+		{
+			sender.enqueue(a, IngestEvent.create(EventType.LOGIN, new SessionData(a.getWorld()), time.now()));
+			announcedHash = a.getHash();
+		}
 	}
 
-	private void endSession()
+	private void endSession(boolean logout)
 	{
 		AccountRef a = account;
 		if (a == null)
@@ -266,12 +297,12 @@ public class SessionTracker
 		}
 		// Collectors first, so loot or containers still waiting for their timer go out before the logout.
 		listeners.forEach(Listener::onSessionEnd);
-		if (loginSent)
+		if (logout && a.getHash().equals(announcedHash))
 		{
 			sender.enqueue(a, IngestEvent.create(EventType.LOGOUT, new SessionData(a.getWorld()), time.now()));
+			announcedHash = null;
 		}
 		account = null;
-		loginSent = false;
 		sender.setOnlineAccount(null);
 	}
 }

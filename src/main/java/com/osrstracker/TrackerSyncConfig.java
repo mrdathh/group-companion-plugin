@@ -10,12 +10,15 @@ public interface TrackerSyncConfig extends Config
 {
 	String GROUP = "trackersync";
 	String CLIENT_ID_KEY = "clientId";
+	String CONSENT_KEY = "consent";
+	/** Hidden: the host the consent was given for. */
+	String CONSENT_HOST_KEY = "consentHost";
 
 	@ConfigSection(
 		name = "Server (data leaves RuneLite)",
 		description = "Everything this plugin collects is sent to the server URL you enter below, which is not"
 			+ " controlled or verified by RuneLite developers. That server sees your IP address and your game data."
-			+ " Nothing is sent until both the URL and the token are set.",
+			+ " Nothing is sent until the URL and the token are set and you tick \"Allow sending to this server\".",
 		position = 0
 	)
 	String serverSection = "server";
@@ -45,14 +48,26 @@ public interface TrackerSyncConfig extends Config
 		name = "Token",
 		description = "The osrs_... token printed by your relay server when your user was created",
 		secret = true,
-		warning = "This plugin submits your IP address and game data to the server at the URL you entered,"
-			+ " which is not controlled or verified by RuneLite developers. Continue?",
 		section = serverSection,
 		position = 1
 	)
 	default String token()
 	{
 		return "";
+	}
+
+	@ConfigItem(
+		keyName = CONSENT_KEY,
+		name = "Allow sending to this server",
+		description = "Tick to agree that your game data and IP address are sent to the Server URL above. Asked once;"
+			+ " changing the Server URL to a different host unticks it.",
+		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
+		section = serverSection,
+		position = 2
+	)
+	default boolean consent()
+	{
+		return false;
 	}
 
 	@ConfigItem(

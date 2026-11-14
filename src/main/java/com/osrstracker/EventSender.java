@@ -132,10 +132,21 @@ public class EventSender
 		return done;
 	}
 
-	/** Apply the configured server URL and token. Invalid or blank values leave the sender unconfigured. */
-	public synchronized void configure(String serverUrl, String token, String clientId)
+	/** As {@link #configure(String, String, String, boolean)} with consent given. */
+	public synchronized boolean configure(String serverUrl, String token, String clientId)
 	{
-		HttpUrl newEndpoint = parseEndpoint(serverUrl);
+		return configure(serverUrl, token, clientId, true);
+	}
+
+	/**
+	 * Apply the configured server URL and token. Invalid or blank values, or no consent, leave the sender
+	 * unconfigured (nothing is queued or sent).
+	 *
+	 * @return true if the effective destination (endpoint or token, or whether sending is allowed) changed
+	 */
+	public synchronized boolean configure(String serverUrl, String token, String clientId, boolean consent)
+	{
+		HttpUrl newEndpoint = consent ? parseEndpoint(serverUrl) : null;
 		String newToken = token == null || token.trim().isEmpty() ? null : token.trim();
 		boolean changed = !String.valueOf(newEndpoint).equals(String.valueOf(endpoint)) || !String.valueOf(newToken).equals(String.valueOf(this.token));
 		this.endpoint = newEndpoint;
@@ -151,6 +162,7 @@ public class EventSender
 			lastSentState.clear();
 			scheduleFlush(0);
 		}
+		return changed;
 	}
 
 	public synchronized boolean isConfigured()
@@ -374,7 +386,7 @@ public class EventSender
 			public void onFailure(Call call, IOException e)
 			{
 				log.debug("Tracker Sync request failed: {}", e.toString());
-				onResult(batch, -1);
+				onResult(batch, -1, null);
 				done.complete(null);
 			}
 
@@ -383,7 +395,21 @@ public class EventSender
 			{
 				try (Response r = response)
 				{
-					onResult(batch, r.code());
+					String detail = null;
+					if (r.code() >= 400 && r.code() < 500 && r.body() != null)
+					{
+						// The server's ApiError explains a rejection; kept short for the log.
+						try
+						{
+							String text = r.body().string();
+							detail = text.length() > 300 ? text.substring(0, 300) : text;
+						}
+						catch (IOException e)
+						{
+							detail = e.toString();
+						}
+					}
+					onResult(batch, r.code(), detail);
 				}
 				finally
 				{
@@ -393,7 +419,7 @@ public class EventSender
 		});
 	}
 
-	private void onResult(Batch batch, int code)
+	private void onResult(Batch batch, int code, String detail)
 	{
 		boolean notifyUnauthorized = false;
 		synchronized (this)
@@ -440,7 +466,8 @@ public class EventSender
 				if (!loggedRejection)
 				{
 					loggedRejection = true;
-					log.warn("Tracker Sync: server rejected {} event(s) with HTTP {}; dropped", batch.items.size(), code);
+					log.warn("Tracker Sync: server rejected {} event(s) ({}) with HTTP {}: {}; dropped",
+						batch.items.size(), eventTypes(batch), code, detail);
 				}
 				backoffMs = 0;
 				retryAt = 0;
@@ -522,6 +549,16 @@ public class EventSender
 				scheduleHeartbeat();
 			}
 		}
+	}
+
+	private static String eventTypes(Batch batch)
+	{
+		java.util.Set<String> types = new java.util.TreeSet<>();
+		for (Pending p : batch.items)
+		{
+			types.add(p.event.getType());
+		}
+		return String.join(",", types);
 	}
 
 	private static void cancel(ScheduledFuture<?> f)

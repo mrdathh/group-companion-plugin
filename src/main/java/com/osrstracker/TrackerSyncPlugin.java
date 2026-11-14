@@ -3,8 +3,10 @@ package com.osrstracker;
 import com.google.inject.Provides;
 import com.osrstracker.timers.TimersCollector;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -94,7 +96,18 @@ public class TrackerSyncPlugin extends Plugin
 	@Inject
 	private HouseTracker houseTracker;
 
+	@Inject
+	private ScheduledExecutorService executor;
+
+	@Inject
+	private TimeSource time;
+
 	private List<SessionTracker.Listener> collectors;
+	/** Applies URL/token/consent edits once they settle, so typing or re-pasting a token is one change. */
+	private Throttle serverConfigChange;
+	private boolean consentHintShown;
+
+	static final long CONFIG_SETTLE_MS = 2_000;
 
 	@Override
 	protected void startUp()
@@ -108,6 +121,8 @@ public class TrackerSyncPlugin extends Plugin
 			eventBus.register(c);
 			session.addListener(c);
 		}
+		serverConfigChange = new Throttle(executor, time, CONFIG_SETTLE_MS, 0, 5 * CONFIG_SETTLE_MS,
+			() -> clientThread.invoke(this::onServerConfigSettled));
 		applyServerConfig();
 		sender.start(this::onUnauthorized);
 
@@ -123,7 +138,12 @@ public class TrackerSyncPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
-		session.shutdown();
+		// Plugin stopped (not a game logout): no logout event, and a restart resumes without a second login.
+		session.pause();
+		if (serverConfigChange != null)
+		{
+			serverConfigChange.cancel();
+		}
 		if (collectors != null)
 		{
 			for (SessionTracker.Listener c : collectors)
@@ -155,6 +175,16 @@ public class TrackerSyncPlugin extends Plugin
 	public void onGameTick(GameTick tick)
 	{
 		session.onGameTick();
+		if (!consentHintShown && session.isActive() && !config.consent()
+			&& !config.token().trim().isEmpty() && Consent.host(config.serverUrl()) != null)
+		{
+			consentHintShown = true;
+			chatMessageManager.queue(QueuedMessage.builder()
+				.type(ChatMessageType.GAMEMESSAGE)
+				.runeLiteFormattedMessage("Tracker Sync: nothing is sent yet. To start, tick \"Allow sending to this server\""
+					+ " in the plugin settings.")
+				.build());
+		}
 	}
 
 	@Subscribe
@@ -175,15 +205,55 @@ public class TrackerSyncPlugin extends Plugin
 		{
 			return; // not a setting: the client id, or the timers' own per-account observations
 		}
-		if ("serverUrl".equals(event.getKey()) || "token".equals(event.getKey()))
+		String key = event.getKey();
+		if (TrackerSyncConfig.CONSENT_HOST_KEY.equals(key))
 		{
-			applyServerConfig();
-			clientThread.invoke(session::onServerConfigChanged);
+			return; // written by applyServerConfig itself
 		}
-		else
+		if ("serverUrl".equals(key) || "token".equals(key) || TrackerSyncConfig.CONSENT_KEY.equals(key))
 		{
-			// A data group may have been switched on: send current snapshots (unchanged ones are suppressed).
-			clientThread.invoke(session::resnapshot);
+			if (serverConfigChange != null)
+			{
+				serverConfigChange.trigger();
+			}
+			return;
+		}
+		// A data group switched on: send that group's current snapshots, nothing else.
+		if ("true".equals(event.getNewValue()))
+		{
+			List<SessionTracker.Listener> group = collectorsFor(key);
+			clientThread.invoke(() -> group.forEach(session::resnapshot));
+		}
+	}
+
+	/** Collectors whose snapshots belong to a data-group toggle (loot and collection log have none to resend). */
+	List<SessionTracker.Listener> collectorsFor(String key)
+	{
+		switch (key)
+		{
+			case "sendSkills":
+				return Collections.singletonList(skillsCollector);
+			case "sendItems":
+				return Collections.singletonList(containerCollector);
+			case "sendQuests":
+				return Collections.singletonList(questDiaryCollector);
+			case "sendStatus":
+				return Collections.singletonList(statusCollector);
+			case "sendTimers":
+				return Collections.singletonList(timersCollector);
+			case "sendProgress":
+				return Arrays.asList(slayerCollector, killCountCollector, combatAchievementCollector);
+			default:
+				return Collections.emptyList();
+		}
+	}
+
+	/** Client thread, after URL/token/consent edits settled. */
+	private void onServerConfigSettled()
+	{
+		if (applyServerConfig())
+		{
+			session.onServerConfigChanged();
 		}
 	}
 
@@ -194,9 +264,32 @@ public class TrackerSyncPlugin extends Plugin
 		event.waitFor(sender.stop());
 	}
 
-	private void applyServerConfig()
+	/**
+	 * Apply URL, token and consent to the sender. Consent is bound to the URL's host: a different host
+	 * unticks the consent box so the player is asked again (see {@link Consent}).
+	 *
+	 * @return true if the effective destination changed
+	 */
+	boolean applyServerConfig()
 	{
-		sender.configure(config.serverUrl(), config.token(), clientId());
+		String storedHost = configManager.getConfiguration(TrackerSyncConfig.GROUP, TrackerSyncConfig.CONSENT_HOST_KEY);
+		Consent.Decision d = Consent.decide(config.serverUrl(), config.consent(), storedHost);
+		if (!d.getBoundHost().equals(storedHost == null ? "" : storedHost))
+		{
+			if (d.getBoundHost().isEmpty())
+			{
+				configManager.unsetConfiguration(TrackerSyncConfig.GROUP, TrackerSyncConfig.CONSENT_HOST_KEY);
+			}
+			else
+			{
+				configManager.setConfiguration(TrackerSyncConfig.GROUP, TrackerSyncConfig.CONSENT_HOST_KEY, d.getBoundHost());
+			}
+		}
+		if (d.isChecked() != config.consent())
+		{
+			configManager.setConfiguration(TrackerSyncConfig.GROUP, TrackerSyncConfig.CONSENT_KEY, d.isChecked());
+		}
+		return sender.configure(config.serverUrl(), config.token(), clientId(), d.isGranted());
 	}
 
 	/** Random id generated once per RuneLite install (stored in the RuneLite config). */
