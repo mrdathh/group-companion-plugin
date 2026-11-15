@@ -31,10 +31,10 @@ import net.runelite.client.ui.NavigationButton;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Tracker Sync",
+	name = "Group Companion",
 	description = "Sends your loot, levels, items, quests, diaries, collection log, live status, farming timers,"
-		+ " slayer, kill counts and combat achievements to your own tracker server",
-	tags = {"tracker", "sync", "loot", "phone", "notifications", "collection", "log"}
+		+ " slayer, kill counts and combat achievements to your own Group Companion server",
+	tags = {"group", "companion", "tracker", "sync", "loot", "phone", "notifications", "collection", "log"}
 )
 public class TrackerSyncPlugin extends Plugin
 {
@@ -156,7 +156,7 @@ public class TrackerSyncPlugin extends Plugin
 		// Side panel: only the plugin's own settings (copy token / login link); nothing from the server.
 		panel = new TrackerSyncPanel(config);
 		navButton = NavigationButton.builder()
-			.tooltip("Tracker Sync")
+			.tooltip("Group Companion")
 			.icon(TrackerSyncPanel.icon())
 			.priority(9)
 			.panel(panel)
@@ -230,7 +230,7 @@ public class TrackerSyncPlugin extends Plugin
 			consentHintShown = true;
 			chatMessageManager.queue(QueuedMessage.builder()
 				.type(ChatMessageType.GAMEMESSAGE)
-				.runeLiteFormattedMessage("Tracker Sync: nothing is sent yet. To start, tick \"Allow sending to this server\""
+				.runeLiteFormattedMessage("Group Companion: nothing is sent yet. To start, tick \"Allow sending to this server\""
 					+ " in the plugin settings.")
 				.build());
 		}
@@ -384,7 +384,7 @@ public class TrackerSyncPlugin extends Plugin
 	{
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.GAMEMESSAGE)
-			.runeLiteFormattedMessage("Tracker Sync: your server rejected the token. Nothing is sent until you fix the token in the plugin settings.")
+			.runeLiteFormattedMessage("Group Companion: your server rejected the token. Nothing is sent until you fix the token in the plugin settings.")
 			.build());
 	}
 

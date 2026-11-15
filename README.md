@@ -1,8 +1,10 @@
-# Tracker Sync
+# Group Companion
 
-A RuneLite plugin that sends your own game data to a **tracker-sync-server** that you host yourself
+A RuneLite plugin that sends your own game data to a **group-companion-server** that you host yourself
 (a separate project: a small server plus a phone web app). The plugin is only the connector: it has no
-UI of its own beyond its settings, and it talks to nothing but the server URL you enter.
+UI of its own beyond its settings and a small side panel, and it talks to nothing but the server URL you enter.
+
+Formerly called "Tracker Sync"; settings saved under the old name carry over unchanged.
 
 ## Before anything is sent
 
@@ -50,14 +52,14 @@ in-game collection log chat notification setting.
 
 ## Settings
 
-Configuration (wrench icon) > search "Tracker Sync":
+Configuration (wrench icon) > search "Group Companion":
 
 - **Server**: Server URL (default `http://127.0.0.1:8787`; use `https://` for anything not on this PC), Token,
   Allow sending to this server (off until you tick it), Show side panel.
 - **Data to send**: Loot, Skills, Items, Quests and diaries, Collection log, Live status and location,
   Timers, Slayer kill counts and combat achievements, Storages and loadouts.
 
-**Side panel:** the Tracker Sync icon in the RuneLite sidebar opens a small panel with two buttons, **Copy token**
+**Side panel:** the Group Companion icon in the RuneLite sidebar opens a small panel with two buttons, **Copy token**
 (to paste into the app's login) and **Copy app login link** (`https://<your server>/#token=…`, opens the app signed
 in on another device), plus a line showing whether the URL, the token and "Allow sending" are set. The token is never
 shown. It only uses the plugin's own settings; hide it with "Show side panel".

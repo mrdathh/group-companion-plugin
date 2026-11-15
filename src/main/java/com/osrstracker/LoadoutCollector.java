@@ -165,7 +165,7 @@ public class LoadoutCollector implements SessionTracker.Listener
 		}
 		if (setups.size() > MAX_LOADOUTS)
 		{
-			log.info("Tracker Sync: {} Inventory Setups setups over the server's limit of {} were left out",
+			log.info("Group Companion: {} Inventory Setups setups over the server's limit of {} were left out",
 				setups.size() - MAX_LOADOUTS, MAX_LOADOUTS);
 		}
 		return out;

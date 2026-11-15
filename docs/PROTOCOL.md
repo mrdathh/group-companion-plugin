@@ -1,6 +1,6 @@
-Protocol v1, plugin 0.1.0, snapshot of 2026-11-15 (updated for storages, deposit box, loadouts, diary tasks, CA tasks, slayer detail, kingdom, Tears of Guthix, loot history limits, collection log summary, name-only `clog_item` and loadout limits). The source of truth is the tracker-sync-server project's `docs/PROTOCOL.md` and `shared/protocol.ts`; this file is the plugin's half as built, and must be kept in step with them.
+Protocol v1, plugin 0.1.0, snapshot of 2026-11-15 (updated for storages, deposit box, loadouts, diary tasks, CA tasks, slayer detail, kingdom, Tears of Guthix, loot history limits, collection log summary, name-only `clog_item` and loadout limits). The source of truth is the group-companion-server project's `docs/PROTOCOL.md` and `shared/protocol.ts`; this file is the plugin's half as built, and must be kept in step with them.
 
-# Tracker Sync plugin → server protocol
+# Group Companion plugin → server protocol
 
 The plugin POSTs JSON to a server the player hosts and configures (default `http://127.0.0.1:8787`).
 It never opens a port and never receives requests.

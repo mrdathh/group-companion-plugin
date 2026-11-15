@@ -13,10 +13,12 @@
   loadouts. Loadouts are read from the Inventory Setups hub plugin's saved setups (config group
   `inventorysetups`): the owner chose this explicitly, knowing it reads that plugin's data (an exception to
   the rule above). Bags are not read from other hub plugins' data (e.g. "Charges Improved").
-- Two projects: this plugin (`tracker-sync-plugin`) and `tracker-sync-server` (server, phone app, contract).
+- Two projects: this plugin (folder `tracker-sync-plugin`, repository `mrdathh/group-companion-plugin`) and
+  `group-companion-server` (server, phone app, contract; repository `mrdathh/group-companion-server`).
 - Local use first; the owner hosts a server later. Eventual idea: players self-host the server and this
   plugin is the connector.
-- Plugin Hub submission comes later and needs a public BSD-2 repository (none exists yet).
+- Plugin Hub submission comes later and needs a public BSD-2 repository (`mrdathh/group-companion-plugin` is public
+  since 2026-11-15).
 - Gear tools (best owned gear, loadout comparison, upgrade suggestions, item catalogue) are deferred by the owner
   (2026-11-14). If they come back, the agreed source is a plugin-sent catalogue from RuneLite's bundled item stats,
   and no DPS calculator. Findings from the stopped attempt: `ItemManager.getItemStats(id)` comes from RuneLite's
@@ -30,14 +32,30 @@
   contacts anything but the player's configured server. Outside data (the owner allowed OSRS Wiki drop rates)
   is fetched by the server.
 
+## Rename to Group Companion (owner decision 2026-11-15)
+
+- The project was renamed from "Tracker Sync" to **Group Companion**: every name a person sees (plugin display name,
+  descriptor, config descriptions, chat messages, side panel title and tooltip, log lines, docs) and the GitHub
+  repositories (`mrdathh/group-companion-plugin`, now public, and `mrdathh/group-companion-server`).
+- Deliberately unchanged so nothing breaks: the folder name `tracker-sync-plugin`, the Java package `com.osrstracker`,
+  class names (`TrackerSync*`), the config group `trackersync` and every config key (saved URL, token and consent carry
+  over), the hidden `clientId`, the `X-Plugin-Version` header and the wire format. The plugin sends no User-Agent of
+  its own (OkHttp/RuneLite default), so there was no name to change there. Gradle's `rootProject.name` stays
+  `tracker-sync` (build-only name of the jar; RuneLite and the hub do not show it).
+- Plugin Hub name check (2026-11-15, `runelite/plugin-hub` `plugins/` and the 1.13.6 hub manifest): no plugin is
+  called "Group Companion" or `group-companion`. Close names: "Group Iron Companion" (`group-iron-companion`, a Group
+  Ironman tracker with a dashboard), "GIM Companion" (`gim-companion`, shares GIM data with its site), "Group Ironmen
+  Tracker In-Game Companion", and "OSRS Companion" (syncs to a third-party site). Reviewers may flag the closeness to
+  "Group Iron Companion". Suggested internal hub name when submitting: `group-companion`.
+
 ## Honest state
 
-- The Tracker Sync side panel (owner request 2026-11-15) only copies the plugin's own settings (the token and an app
+- The Group Companion side panel (owner request 2026-11-15) only copies the plugin's own settings (the token and an app
   login link `<server origin>/#token=<token>`) and shows whether URL, token and consent are set. It reads nothing from
   the server, shows no goals, never displays or logs the token, and can be hidden ("Show side panel"). It does not
   change the pure-sender rule.
-- `./gradlew --no-daemon clean build` passes on JDK 11: 196 unit tests, 0 failures, no javac warnings.
-- **Server side (tracker-sync-server main, 2026-11-15):** drop luck, approximate loot and the merged collection log
+- `./gradlew --no-daemon clean build` passes on JDK 11: 201 unit tests, 0 failures, no javac warnings.
+- **Server side (group-companion-server main, 2026-11-15):** drop luck, approximate loot and the merged collection log
   are on the server's main; no further plugin change is needed for them. Drop luck uses the `loot` events'
   `source.id`, `source.combatLevel` and `killCount`; approximate loot (loot played without this plugin) comes from
   the difference between two `loot_history` snapshots; the app's collection log merges `collection_log`, `clog_item`
@@ -57,15 +75,17 @@
   items, X/Y obtained" on success; debug lines name every skip reason. New: `collection_log_summary` at login (counts
   readable without opening the log), new items also from the game's popup (deduplicated with the chat line), and the
   Gauntlet / Corrupted Gauntlet / Fortis Colosseum kill counts attach to their loot.
-- **Restart the developer client to pick up the latest work.** Built and unit-tested but never run in the game:
-  the Tracker Sync side panel (copy token / copy app login link, 2026-11-15), the loot history import (`loot_history`, now trimmed to the server's limits and sent in a request of its own) and
+- **Restart the developer client to pick up the latest work.** After the rename the plugin shows up as "Group
+  Companion" (settings carry over: same config group). Built and unit-tested but never run in the game:
+  the Group Companion side panel (copy token / copy app login link, 2026-11-15), the loot history import (`loot_history`, now trimmed to the server's limits and sent in a request of its own) and
   the new loot debug logging. Storages, loadouts, kingdom, diaries
   etc. reached the server in the owner's run (2026-11-14); no live `loot` has been seen yet because the owner had
   not killed anything since installing.
 - First in-game run on 2026-11-14 (see below): the basics work against the real game; most of the checklist is
   still unverified. The session-event bug and the repeated IP-address warning dialog are fixed but not yet
   re-checked in game.
-- First commit on `main`, pushed to the private GitHub repository `mrdathh/tracker-sync-plugin` (2026-11-14). It must be made public before a Plugin Hub submission.
+- First commit on `main`, pushed to the private GitHub repository `mrdathh/tracker-sync-plugin` (2026-11-14); renamed to
+  `mrdathh/group-companion-plugin` and made public on 2026-11-15.
 
 ## First in-game run (2026-11-14)
 
@@ -124,7 +144,7 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
 8. [ ] **Bank.** Open the bank: `container` bank about 5 s later, no placeholders or fillers; close it: sent at once.
    Also seed vault and looting bag. Look at `ContainerCollector`.
 9. [ ] **A kill with loot and kill count (first live kill).** In the client log (developer mode logs debug lines)
-   look for "Tracker Sync loot: LootReceived …", "held …", "emit …" and once "Tracker Sync: first loot event of
+   look for "Group Companion loot: LootReceived …", "held …", "emit …" and once "Group Companion: first loot event of
    this session queued"; a "server rejected … (loot…) with HTTP 400" warning means the server refused it. Kill a boss with a kill-count message (or Barrows): `loot` within ~1 s,
    `source` name/id/combat level, `killCount` matching the chat; one event per kill (also with Loot Tracker
    turned off: NPC kills only). Raids/clues/chests need the Loot Tracker on. Look at `LootCollector`.
@@ -139,7 +159,7 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     `newItemNotification` matching Settings → "Collection log - New addition notification" (switch it between the
     options once and check each: `off`, `chat`, `popup`, `both`; **the popup/both values 2/3 are inferred**). If no
     summary arrives, look for debug lines "Collection log summary: counts not loaded yet".
-    b) **Whole log:** open your own log once: the client log shows the info line "Tracker Sync: collection log read:
+    b) **Whole log:** open your own log once: the client log shows the info line "Group Companion: collection log read:
     N items, X/Y obtained" and a `collection_log` arrives with `items`/`names`/`obtained`/`total` matching; the
     search box must not end up toggled off by the two plugins. With the Group Ironmen Tracker off, the same works
     (this plugin opens the search itself). Opening again within 500 ticks sends nothing (debug "last read N ticks
@@ -212,7 +232,7 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     minutes of RuneLite's config sync (or at logout). Log line "loot history with N sources, B bytes".
     A history over the server's limits sends the newest sources with one info line "left out N of M sources and
     I of J items". Look at `LootHistoryCollector`, `LootHistoryLimiter`.
-36. [ ] **Side panel.** The Tracker Sync icon in the RuneLite sidebar opens a panel: "Copy token" puts the token on
+36. [ ] **Side panel.** The Group Companion icon in the RuneLite sidebar opens a panel: "Copy token" puts the token on
     the clipboard (label shows "Copied" for 2 s); "Copy app login link" gives `https://<server>/#token=…` that signs
     the app in; both disabled without a token; the status line matches the settings; the token is not shown anywhere;
     "Show side panel" off removes the icon. Look at `TrackerSyncPanel`.
@@ -293,7 +313,7 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
    the unticked items.
 2. The owner rebuilds and restarts the server so it has drop luck, approximate loot and the merged collection log;
    the first real OSRS Wiki import runs about a minute after the restart.
-3. Later: a public BSD-2 repository and the Plugin Hub submission.
+3. Later: the Plugin Hub submission (public BSD-2 repository exists; suggested hub name `group-companion`).
 
 ## Left undone
 

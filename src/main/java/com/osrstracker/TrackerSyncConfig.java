@@ -34,7 +34,7 @@ public interface TrackerSyncConfig extends Config
 	@ConfigItem(
 		keyName = "serverUrl",
 		name = "Server URL",
-		description = "Base URL of your relay server, e.g. http://127.0.0.1:8787. Game data is sent here."
+		description = "Base URL of your Group Companion server, e.g. http://127.0.0.1:8787. Game data is sent here."
 			+ " Use https for anything that is not on this PC.",
 		section = serverSection,
 		position = 0
@@ -47,7 +47,7 @@ public interface TrackerSyncConfig extends Config
 	@ConfigItem(
 		keyName = "token",
 		name = "Token",
-		description = "The osrs_... token printed by your relay server when your user was created",
+		description = "The osrs_... token printed by your Group Companion server when your user was created",
 		secret = true,
 		section = serverSection,
 		position = 1
@@ -74,7 +74,7 @@ public interface TrackerSyncConfig extends Config
 	@ConfigItem(
 		keyName = SHOW_PANEL_KEY,
 		name = "Show side panel",
-		description = "A Tracker Sync side panel with buttons to copy your token and the app's login link",
+		description = "A Group Companion side panel with buttons to copy your token and the app's login link",
 		section = serverSection,
 		position = 3
 	)

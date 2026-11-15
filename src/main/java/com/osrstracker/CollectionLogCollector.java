@@ -596,7 +596,7 @@ public class CollectionLogCollector implements SessionTracker.Listener
 		readItems.clear();
 		lastReadTick = client.getTickCount();
 		session.emit(EventType.COLLECTION_LOG, new CollectionLogData(out, names, obtained, total));
-		log.info("Tracker Sync: collection log read: {} items, {}/{} obtained", out.size(), obtained, total);
+		log.info("Group Companion: collection log read: {} items, {}/{} obtained", out.size(), obtained, total);
 	}
 
 	/** Number of distinct collection log slots, from the cache enums/structs (as WikiSync does). */

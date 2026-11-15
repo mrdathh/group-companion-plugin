@@ -77,7 +77,7 @@ public class DiaryTasks
 		{
 			if (in == null)
 			{
-				log.warn("Tracker Sync: {} missing; diaries are sent without tasks", RESOURCE);
+				log.warn("Group Companion: {} missing; diaries are sent without tasks", RESOURCE);
 				return out;
 			}
 			try (Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8))
@@ -101,7 +101,7 @@ public class DiaryTasks
 		}
 		catch (Exception e)
 		{
-			log.warn("Tracker Sync: could not read {}; diaries are sent without tasks", RESOURCE, e);
+			log.warn("Group Companion: could not read {}; diaries are sent without tasks", RESOURCE, e);
 			out.clear();
 		}
 		return out;

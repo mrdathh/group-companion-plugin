@@ -76,11 +76,11 @@ public class LootCollector implements SessionTracker.Listener
 	@Subscribe
 	public void onLootReceived(LootReceived event)
 	{
-		log.debug("Tracker Sync loot: LootReceived {} {} with {} stack(s)", event.getType(), event.getName(),
+		log.debug("Group Companion loot: LootReceived {} {} with {} stack(s)", event.getType(), event.getName(),
 			event.getItems() == null ? 0 : event.getItems().size());
 		if (!wanted())
 		{
-			log.debug("Tracker Sync loot: ignored (loot setting {}, session active {})", config.sendLoot(), session.isActive());
+			log.debug("Group Companion loot: ignored (loot setting {}, session active {})", config.sendLoot(), session.isActive());
 			return;
 		}
 		String type = event.getType() == null ? "UNKNOWN" : event.getType().name();
@@ -111,15 +111,15 @@ public class LootCollector implements SessionTracker.Listener
 	{
 		if (!wanted())
 		{
-			log.debug("Tracker Sync loot: ServerNpcLoot ignored (loot setting {}, session active {})", config.sendLoot(), session.isActive());
+			log.debug("Group Companion loot: ServerNpcLoot ignored (loot setting {}, session active {})", config.sendLoot(), session.isActive());
 			return;
 		}
 		if (isLootTrackerActive())
 		{
-			log.debug("Tracker Sync loot: ServerNpcLoot for {} left to the Loot Tracker's LootReceived", event.getComposition().getName());
+			log.debug("Group Companion loot: ServerNpcLoot for {} left to the Loot Tracker's LootReceived", event.getComposition().getName());
 			return; // the Loot Tracker reports this kill through LootReceived
 		}
-		log.debug("Tracker Sync loot: ServerNpcLoot for {} used directly (Loot Tracker plugin not active)", event.getComposition().getName());
+		log.debug("Group Companion loot: ServerNpcLoot for {} used directly (Loot Tracker plugin not active)", event.getComposition().getName());
 		NPCComposition npc = event.getComposition();
 		String name = npc.getName() == null ? "Unknown" : Text.removeTags(npc.getName());
 		hold(new LootData.Source("NPC", name, npc.getId(), npc.getCombatLevel() > 0 ? npc.getCombatLevel() : null), event.getItems());
@@ -165,18 +165,18 @@ public class LootCollector implements SessionTracker.Listener
 		for (Held h : held)
 		{
 			Integer kc = takeKillCount(h.source.getName());
-			log.debug("Tracker Sync loot: emit {} {} ({} items, {} gp, kill count {})", h.source.getType(), h.source.getName(),
+			log.debug("Group Companion loot: emit {} {} ({} items, {} gp, kill count {})", h.source.getType(), h.source.getName(),
 				h.items.size(), h.totalGe, kc);
 			if (!session.isActive())
 			{
-				log.debug("Tracker Sync loot: dropped, no session");
+				log.debug("Group Companion loot: dropped, no session");
 				continue;
 			}
 			session.emit(EventType.LOOT, new LootData(h.source, kc, h.items, h.totalGe), h.at);
 			if (!firstLootLogged)
 			{
 				firstLootLogged = true;
-				log.info("Tracker Sync: first loot event of this session queued ({} {})", h.source.getType(), h.source.getName());
+				log.info("Group Companion: first loot event of this session queued ({} {})", h.source.getType(), h.source.getName());
 			}
 		}
 		held.clear();
@@ -226,7 +226,7 @@ public class LootCollector implements SessionTracker.Listener
 		}
 		if (merged.isEmpty())
 		{
-			log.debug("Tracker Sync loot: {} {} had no items; not a loot event", source.getType(), source.getName());
+			log.debug("Group Companion loot: {} {} had no items; not a loot event", source.getType(), source.getName());
 			return; // a kill without a drop is not a loot event
 		}
 		List<Item> list = new ArrayList<>(merged.values());
@@ -239,7 +239,7 @@ public class LootCollector implements SessionTracker.Listener
 		{
 			held.add(new Held(source, list, total, time.now()));
 		}
-		log.debug("Tracker Sync loot: held {} {} until the end of the tick (kill-count message)", source.getType(), source.getName());
+		log.debug("Group Companion loot: held {} {} until the end of the tick (kill-count message)", source.getType(), source.getName());
 	}
 
 	private boolean isLootTrackerActive()

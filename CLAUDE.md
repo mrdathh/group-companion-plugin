@@ -1,10 +1,13 @@
-# Tracker Sync (RuneLite plugin) — notes for coding sessions
+# Group Companion (RuneLite plugin) — notes for coding sessions
 
 Read `docs/STATUS.md` first (state, owner decisions, in-game checklist). Wire format: `docs/PROTOCOL.md`.
 
 ## Layout
 
 Package `com.osrstracker`, Java 11, Gradle project in this folder (Plugin Hub template layout).
+Shown name: "Group Companion" (renamed from "Tracker Sync", 2026-11-15). The identifiers keep the old name on
+purpose: class names `TrackerSync*`, config group `trackersync` and its keys (saved settings), folder name. Do not
+rename them.
 
 - `TrackerSyncPlugin`, `TrackerSyncConfig` — lifecycle/event wiring; config group `trackersync` (hidden key `clientId`).
 - `TrackerSyncPanel` — side panel: copy token, copy app login link (`<origin>/#token=`), status line; "Show side panel".
@@ -63,7 +66,7 @@ game input breaks Jagex rules). Ask the owner to run it and follow `docs/STATUS.
 
 ## Contract rule
 
-The source of truth is the tracker-sync-server project's `docs/PROTOCOL.md` and `shared/protocol.ts`. This
+The source of truth is the group-companion-server project's `docs/PROTOCOL.md` and `shared/protocol.ts`. This
 project must not depend on files outside its folder: `docs/PROTOCOL.md` here is a snapshot of the plugin's half.
 When the contract changes: update the models, `ProtocolJsonTest` (expected JSON written by hand from the
 contract), and this snapshot together. Do not change the contract from here; report disagreements to the owner.

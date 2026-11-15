@@ -436,7 +436,7 @@ public class EventSender
 			@Override
 			public void onFailure(Call call, IOException e)
 			{
-				log.debug("Tracker Sync request failed: {}", e.toString());
+				log.debug("Group Companion request failed: {}", e.toString());
 				onResult(batch, -1, null);
 				done.complete(null);
 			}
@@ -501,7 +501,7 @@ public class EventSender
 				states.values().removeIf(p -> p.isVolatile);
 				notifyUnauthorized = !unauthorized;
 				unauthorized = true;
-				log.warn("Tracker Sync: server rejected the token (401); sending stopped until the token or URL changes");
+				log.warn("Group Companion: server rejected the token (401); sending stopped until the token or URL changes");
 			}
 			else if (code == -1 || code >= 500 || code == 408 || code == 429)
 			{
@@ -509,7 +509,7 @@ public class EventSender
 				backoffMs = backoffMs == 0 ? BACKOFF_MIN_MS : Math.min(backoffMs * 2, BACKOFF_MAX_MS);
 				retryAt = time.nowMillis() + backoffMs;
 				states.values().removeIf(p -> p.isVolatile);
-				log.debug("Tracker Sync: server unreachable ({}), retrying in {} ms", code, backoffMs);
+				log.debug("Group Companion: server unreachable ({}), retrying in {} ms", code, backoffMs);
 			}
 			else
 			{
@@ -517,7 +517,7 @@ public class EventSender
 				if (!loggedRejection)
 				{
 					loggedRejection = true;
-					log.warn("Tracker Sync: server rejected {} event(s) ({}) with HTTP {}: {}; dropped",
+					log.warn("Group Companion: server rejected {} event(s) ({}) with HTTP {}: {}; dropped",
 						batch.items.size(), eventTypes(batch), code, detail);
 				}
 				backoffMs = 0;

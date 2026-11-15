@@ -51,7 +51,7 @@ public class TrackerSyncPanel extends PluginPanel
 		setLayout(new BorderLayout());
 		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-		JLabel title = new JLabel("Tracker Sync");
+		JLabel title = new JLabel("Group Companion");
 		title.setFont(title.getFont().deriveFont(Font.BOLD));
 		title.setForeground(Color.WHITE);
 

@@ -133,13 +133,13 @@ public class LootHistoryCollector implements SessionTracker.Listener
 		}
 		if (stored.isEmpty())
 		{
-			log.debug("Tracker Sync: no stored Loot Tracker history for this profile");
+			log.debug("Group Companion: no stored Loot Tracker history for this profile");
 			return;
 		}
 		LootHistoryLimiter.Result fitted = LootHistoryLimiter.fit(build(stored), gson);
 		if (fitted.trimmed())
 		{
-			log.info("Tracker Sync: loot history is over the server's limits ({} sources, {} items, {} items per source,"
+			log.info("Group Companion: loot history is over the server's limits ({} sources, {} items, {} items per source,"
 					+ " {} bytes); left out {} of {} sources and {} of {} items (kept the newest sources and the most valuable items)",
 				LootHistoryLimiter.MAX_SOURCES, LootHistoryLimiter.MAX_ITEMS, LootHistoryLimiter.MAX_ITEMS_PER_SOURCE,
 				LootHistoryLimiter.MAX_BYTES, fitted.getSourcesLeftOut(), fitted.getSourcesBefore(), fitted.getItemsLeftOut(),
@@ -149,7 +149,7 @@ public class LootHistoryCollector implements SessionTracker.Listener
 		{
 			return;
 		}
-		log.debug("Tracker Sync: loot history with {} sources, {} bytes", fitted.getData().getSources().size(), fitted.getBytes());
+		log.debug("Group Companion: loot history with {} sources, {} bytes", fitted.getData().getSources().size(), fitted.getBytes());
 		session.emit(EventType.LOOT_HISTORY, fitted.getData());
 	}
 

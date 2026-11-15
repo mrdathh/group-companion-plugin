@@ -175,7 +175,7 @@ public class SessionTracker
 		}
 		if (!allowed)
 		{
-			log.debug("Tracker Sync: world {} is excluded, not sending", client.getWorld());
+			log.debug("Group Companion: world {} is excluded, not sending", client.getWorld());
 			return;
 		}
 		if (current == null)
