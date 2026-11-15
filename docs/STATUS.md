@@ -32,6 +32,10 @@
 
 ## Honest state
 
+- The Tracker Sync side panel (owner request 2026-11-15) only copies the plugin's own settings (the token and an app
+  login link `<server origin>/#token=<token>`) and shows whether URL, token and consent are set. It reads nothing from
+  the server, shows no goals, never displays or logs the token, and can be hidden ("Show side panel"). It does not
+  change the pure-sender rule.
 - `./gradlew --no-daemon clean build` passes on JDK 11: 196 unit tests, 0 failures, no javac warnings.
 - **Server side (tracker-sync-server main, 2026-11-15):** drop luck, approximate loot and the merged collection log
   are on the server's main; no further plugin change is needed for them. Drop luck uses the `loot` events'
@@ -54,7 +58,7 @@
   readable without opening the log), new items also from the game's popup (deduplicated with the chat line), and the
   Gauntlet / Corrupted Gauntlet / Fortis Colosseum kill counts attach to their loot.
 - **Restart the developer client to pick up the latest work.** Built and unit-tested but never run in the game:
-  the loot history import (`loot_history`, now trimmed to the server's limits and sent in a request of its own) and
+  the Tracker Sync side panel (copy token / copy app login link, 2026-11-15), the loot history import (`loot_history`, now trimmed to the server's limits and sent in a request of its own) and
   the new loot debug logging. Storages, loadouts, kingdom, diaries
   etc. reached the server in the owner's run (2026-11-14); no live `loot` has been seen yet because the owner had
   not killed anything since installing.
@@ -208,6 +212,10 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     minutes of RuneLite's config sync (or at logout). Log line "loot history with N sources, B bytes".
     A history over the server's limits sends the newest sources with one info line "left out N of M sources and
     I of J items". Look at `LootHistoryCollector`, `LootHistoryLimiter`.
+36. [ ] **Side panel.** The Tracker Sync icon in the RuneLite sidebar opens a panel: "Copy token" puts the token on
+    the clipboard (label shows "Copied" for 2 s); "Copy app login link" gives `https://<server>/#token=…` that signs
+    the app in; both disabled without a token; the status line matches the settings; the token is not shown anywhere;
+    "Show side panel" off removes the icon. Look at `TrackerSyncPanel`.
 
 Also check: the plugin's Data toggles stop each group; turning one back on resends that group's snapshots.
 

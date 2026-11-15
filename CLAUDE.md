@@ -7,6 +7,7 @@ Read `docs/STATUS.md` first (state, owner decisions, in-game checklist). Wire fo
 Package `com.osrstracker`, Java 11, Gradle project in this folder (Plugin Hub template layout).
 
 - `TrackerSyncPlugin`, `TrackerSyncConfig` — lifecycle/event wiring; config group `trackersync` (hidden key `clientId`).
+- `TrackerSyncPanel` — side panel: copy token, copy app login link (`<origin>/#token=`), status line; "Show side panel".
 - `EventSender` — queue, batching, retry/backoff, 500 cap, newest snapshot per key, unchanged suppression, volatile `status`,
   solo events (`loot_history` alone in its request), heartbeat.
 - `SessionTracker` — login/logout, account ref, world exclusions; every emit goes through it. One `login` per real
@@ -55,8 +56,10 @@ game input breaks Jagex rules). Ask the owner to run it and follow `docs/STATUS.
 - Ported code keeps its licence notice and is listed in `THIRD_PARTY_NOTICES.md`. No text copied from the OSRS Wiki
   (CC BY-NC-SA) inside the plugin.
 - **Pure sender (owner decision 2026-11-14):** the plugin never reads data from the server (beyond the HTTP status of its
-  own requests), has no in-game goal overlay or side panel, and contacts nothing but the player's configured server.
+  own requests), has no in-game goal overlay or goal panel, and contacts nothing but the player's configured server.
   Goals/roadmaps live in the phone app; outside data (e.g. OSRS Wiki drop rates) is fetched by the server.
+  The one side panel (`TrackerSyncPanel`, owner request 2026-11-15) only copies the token / app login link from the
+  plugin's own settings and shows a status line; it must never display or log the token.
 
 ## Contract rule
 

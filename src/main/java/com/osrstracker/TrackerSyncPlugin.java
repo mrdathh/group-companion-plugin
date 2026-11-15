@@ -26,6 +26,8 @@ import net.runelite.client.events.ClientShutdown;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.ClientToolbar;
+import net.runelite.client.ui.NavigationButton;
 
 @Slf4j
 @PluginDescriptor(
@@ -118,6 +120,12 @@ public class TrackerSyncPlugin extends Plugin
 	private ScheduledExecutorService executor;
 
 	@Inject
+	private ClientToolbar clientToolbar;
+
+	private TrackerSyncPanel panel;
+	private NavigationButton navButton;
+
+	@Inject
 	private TimeSource time;
 
 	private List<SessionTracker.Listener> collectors;
@@ -145,6 +153,19 @@ public class TrackerSyncPlugin extends Plugin
 		applyServerConfig();
 		sender.start(this::onUnauthorized);
 
+		// Side panel: only the plugin's own settings (copy token / login link); nothing from the server.
+		panel = new TrackerSyncPanel(config);
+		navButton = NavigationButton.builder()
+			.tooltip("Tracker Sync")
+			.icon(TrackerSyncPanel.icon())
+			.priority(9)
+			.panel(panel)
+			.build();
+		if (config.showPanel())
+		{
+			clientToolbar.addNavigation(navButton);
+		}
+
 		clientThread.invoke(() ->
 		{
 			if (client.getGameState() == GameState.LOGGED_IN)
@@ -158,6 +179,12 @@ public class TrackerSyncPlugin extends Plugin
 	protected void shutDown()
 	{
 		// Plugin stopped (not a game logout): no logout event, and a restart resumes without a second login.
+		if (navButton != null)
+		{
+			clientToolbar.removeNavigation(navButton);
+			navButton = null;
+			panel = null;
+		}
 		session.pause();
 		if (serverConfigChange != null)
 		{
@@ -231,6 +258,27 @@ public class TrackerSyncPlugin extends Plugin
 		if (TrackerSyncConfig.CONSENT_HOST_KEY.equals(key))
 		{
 			return; // written by applyServerConfig itself
+		}
+		if (TrackerSyncConfig.SHOW_PANEL_KEY.equals(key))
+		{
+			NavigationButton button = navButton;
+			if (button != null)
+			{
+				if (config.showPanel())
+				{
+					clientToolbar.addNavigation(button);
+				}
+				else
+				{
+					clientToolbar.removeNavigation(button);
+				}
+			}
+			return;
+		}
+		TrackerSyncPanel p = panel;
+		if (p != null)
+		{
+			TrackerSyncPanel.onEdt(p::refresh);
 		}
 		if ("serverUrl".equals(key) || "token".equals(key) || TrackerSyncConfig.CONSENT_KEY.equals(key))
 		{

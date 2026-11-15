@@ -53,9 +53,14 @@ in-game collection log chat notification setting.
 Configuration (wrench icon) > search "Tracker Sync":
 
 - **Server**: Server URL (default `http://127.0.0.1:8787`; use `https://` for anything not on this PC), Token,
-  Allow sending to this server (off until you tick it).
+  Allow sending to this server (off until you tick it), Show side panel.
 - **Data to send**: Loot, Skills, Items, Quests and diaries, Collection log, Live status and location,
   Timers, Slayer kill counts and combat achievements, Storages and loadouts.
+
+**Side panel:** the Tracker Sync icon in the RuneLite sidebar opens a small panel with two buttons, **Copy token**
+(to paste into the app's login) and **Copy app login link** (`https://<your server>/#token=…`, opens the app signed
+in on another device), plus a line showing whether the URL, the token and "Allow sending" are set. The token is never
+shown. It only uses the plugin's own settings; hide it with "Show side panel".
 
 ## Developing
 

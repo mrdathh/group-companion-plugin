@@ -35,6 +35,7 @@ import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.After;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import org.junit.Before;
 import org.junit.Test;
@@ -85,6 +86,10 @@ public class TrackerSyncPluginInjectionTest
 	@Bind
 	private PluginManager pluginManager;
 
+	@Mock
+	@Bind
+	private net.runelite.client.ui.ClientToolbar clientToolbar;
+
 	private final FakeScheduler fakeScheduler = new FakeScheduler();
 
 	@Bind
@@ -125,6 +130,7 @@ public class TrackerSyncPluginInjectionTest
 		when(config.serverUrl()).thenReturn(server.url("/").toString());
 		when(config.token()).thenAnswer(inv -> token);
 		when(config.consent()).thenAnswer(inv -> consent);
+		when(config.showPanel()).thenReturn(true);
 		doAnswer(inv ->
 		{
 			((Runnable) inv.getArgument(0)).run();
@@ -154,6 +160,40 @@ public class TrackerSyncPluginInjectionTest
 	public void tearDown() throws Exception
 	{
 		server.shutdown();
+	}
+
+	@Test
+	public void theTokenNeverAppearsInTheLog() throws Exception
+	{
+		ch.qos.logback.classic.Logger root = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+		ch.qos.logback.classic.Level before = root.getLevel();
+		ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender = new ch.qos.logback.core.read.ListAppender<>();
+		appender.start();
+		root.addAppender(appender);
+		root.setLevel(ch.qos.logback.classic.Level.ALL);
+		try
+		{
+			inGame();
+			plugin.startUp();
+			logIn();
+			token = "osrs_rotated-token";
+			configChanged("token", token);
+			((FakeScheduler) executor).advance(TrackerSyncPlugin.CONFIG_SETTLE_MS * 2);
+			sessionEventsWithin(500);
+			plugin.shutDown();
+		}
+		finally
+		{
+			root.detachAppender(appender);
+			root.setLevel(before);
+		}
+		for (ch.qos.logback.classic.spi.ILoggingEvent e : appender.list)
+		{
+			String line = e.getFormattedMessage() + (e.getThrowableProxy() == null ? "" : e.getThrowableProxy().getMessage());
+			assertFalse(line, line.contains("osrs_test") || line.contains("osrs_rotated-token"));
+		}
+		verify(clientToolbar).addNavigation(any(net.runelite.client.ui.NavigationButton.class));
+		verify(clientToolbar).removeNavigation(any(net.runelite.client.ui.NavigationButton.class));
 	}
 
 	@Test

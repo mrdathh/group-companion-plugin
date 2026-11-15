@@ -11,6 +11,7 @@ public interface TrackerSyncConfig extends Config
 	String GROUP = "trackersync";
 	String CLIENT_ID_KEY = "clientId";
 	String CONSENT_KEY = "consent";
+	String SHOW_PANEL_KEY = "showPanel";
 	/** Hidden: the host the consent was given for. */
 	String CONSENT_HOST_KEY = "consentHost";
 
@@ -68,6 +69,18 @@ public interface TrackerSyncConfig extends Config
 	default boolean consent()
 	{
 		return false;
+	}
+
+	@ConfigItem(
+		keyName = SHOW_PANEL_KEY,
+		name = "Show side panel",
+		description = "A Tracker Sync side panel with buttons to copy your token and the app's login link",
+		section = serverSection,
+		position = 3
+	)
+	default boolean showPanel()
+	{
+		return true;
 	}
 
 	@ConfigItem(
