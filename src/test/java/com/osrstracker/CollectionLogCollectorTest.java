@@ -583,4 +583,148 @@ public class CollectionLogCollectorTest
 		nextTick();
 		verify(session, never()).emit(eq(EventType.CLOG_PAGE), any());
 	}
+
+	// ------------------------------------------------------------------ clog_page from player vars
+
+	private final java.util.Map<Integer, Integer> varps = new java.util.HashMap<>();
+
+	/**
+	 * The five tabs with real page structs: Bosses = Dagannoth Kings (486), Royal Titans (1743); Raids = Chambers of
+	 * Xeric (507); Clues = Beginner (593); Minigames = Gnome Restaurant (521); Other = an unmapped page (9999).
+	 */
+	private void realCache()
+	{
+		int[][] tabs = {{486, 1743}, {507}, {593}, {521}, {9999}};
+		String[][] names = {{"Dagannoth Kings", "Royal Titans"}, {"Chambers of Xeric"}, {"Beginner Treasure Trails"},
+			{"Gnome Restaurant"}, {"Miscellaneous"}};
+		for (int t = 0; t < tabs.length; t++)
+		{
+			StructComposition tab = mock(StructComposition.class);
+			when(tab.getIntValue(CollectionLogCollector.TAB_PAGES_ENUM_PARAM)).thenReturn(9100 + t);
+			when(client.getStructComposition(CollectionLogCollector.TAB_STRUCTS[t])).thenReturn(tab);
+			EnumComposition pages = mock(EnumComposition.class);
+			when(pages.getIntVals()).thenReturn(tabs[t]);
+			when(client.getEnum(9100 + t)).thenReturn(pages);
+			for (int p = 0; p < tabs[t].length; p++)
+			{
+				StructComposition page = mock(StructComposition.class);
+				when(page.getStringValue(CollectionLogCollector.PAGE_NAME_PARAM)).thenReturn(names[t][p]);
+				when(client.getStructComposition(tabs[t][p])).thenReturn(page);
+			}
+		}
+		when(client.getVarpValue(anyInt())).thenAnswer(inv -> varps.getOrDefault((Integer) inv.getArgument(0), 0));
+	}
+
+	private void varpChanged(int varp, int value)
+	{
+		varps.put(varp, value);
+		VarbitChanged change = new VarbitChanged();
+		change.setVarbitId(-1);
+		change.setVarpId(varp);
+		change.setValue(value);
+		collector.onVarbitChanged(change);
+	}
+
+	private List<ClogPageData> pages(int times)
+	{
+		List<ClogPageData> out = new java.util.ArrayList<>();
+		for (Object o : emitted(EventType.CLOG_PAGE, times))
+		{
+			out.add((ClogPageData) o);
+		}
+		return out;
+	}
+
+	@Test
+	public void pageCountsFromVarsAfterLoginThenOnlyChangedPages()
+	{
+		realCache();
+		varps.put(VarPlayerID.TOTAL_ROYAL_TITAN_KILLS, 158);
+		varps.put(VarPlayerID.TOTAL_REX_KILLS, 1234);
+		varps.put(VarPlayerID.TOTAL_PRIME_KILLS, 56);
+		varps.put(VarPlayerID.COMPLETED_CLUES5, -1); // never: not sent
+		when(client.getVarbitValue(VarbitID.COLLECTION_ALUFT_HARD_DELIVERIES)).thenReturn(3);
+
+		collector.onSessionStart();
+		scheduler.advance(CollectionLogCollector.SUMMARY_LOGIN_SETTLE_MS);
+		List<ClogPageData> sent = pages(3);
+		assertEquals("Bosses", sent.get(0).getTab());
+		assertEquals("Dagannoth Kings", sent.get(0).getPage());
+		assertEquals(Arrays.asList(new ClogPageData.Count("Dagannoth Prime kills", 56),
+			new ClogPageData.Count("Dagannoth Rex kills", 1234)), sent.get(0).getCounts());
+		assertEquals("Royal Titans", sent.get(1).getPage());
+		assertEquals(Arrays.asList(new ClogPageData.Count("Royal Titan kills", 158)), sent.get(1).getCounts());
+		assertEquals("Minigames", sent.get(2).getTab());
+		assertEquals("Gnome Restaurant", sent.get(2).getPage());
+		assertEquals(Arrays.asList(new ClogPageData.Count("Gnome restaurant hard deliveries", 3)), sent.get(2).getCounts());
+
+		// A kill: only that page, after the quiet period.
+		varpChanged(VarPlayerID.TOTAL_ROYAL_TITAN_KILLS, 159);
+		scheduler.advance(CollectionLogCollector.VAR_PAGES_DELAY_MS - 1);
+		pages(3);
+		scheduler.advance(CollectionLogCollector.VAR_PAGES_MIN_INTERVAL_MS);
+		sent = pages(4);
+		assertEquals("Royal Titans", sent.get(3).getPage());
+		assertEquals(159, sent.get(3).getCounts().get(0).getCount());
+
+		// Unrelated vars do not trigger it; a mapped var with the same value sends nothing.
+		varpChanged(VarPlayerID.COLLECTION_COUNT, 5);
+		varpChanged(VarPlayerID.TOTAL_REX_KILLS, 1234);
+		scheduler.advance(60_000);
+		pages(4);
+
+		// Opening a page whose header matches what the vars sent sends nothing more.
+		when(client.getVarbitValue(VarbitID.COLLECTION_LAST_TAB)).thenReturn(0);
+		when(client.getVarbitValue(VarbitID.COLLECTION_LAST_CATEGORY)).thenReturn(1);
+		header("Royal Titans", "Obtained: 3/11", "Royal Titan kills: 159");
+		pageDrawnThenTick();
+		pages(4);
+
+		// A new session sends them all again.
+		collector.onSessionStart();
+		scheduler.advance(CollectionLogCollector.SUMMARY_LOGIN_SETTLE_MS + CollectionLogCollector.VAR_PAGES_MIN_INTERVAL_MS);
+		pages(7);
+	}
+
+	@Test
+	public void aPageThatDisagreesWithItsVarWinsForTheRestOfTheRun()
+	{
+		realCache();
+		varps.put(VarPlayerID.TOTAL_ROYAL_TITAN_KILLS, 158);
+		collector.onSessionStart();
+		scheduler.advance(CollectionLogCollector.SUMMARY_LOGIN_SETTLE_MS);
+		pages(1);
+
+		when(client.getVarbitValue(VarbitID.COLLECTION_LAST_TAB)).thenReturn(0);
+		when(client.getVarbitValue(VarbitID.COLLECTION_LAST_CATEGORY)).thenReturn(1);
+		header("Royal Titans", "Obtained: 3/11", "Royal Titan kills: 170");
+		pageDrawnThenTick();
+		assertEquals(170, pages(2).get(1).getCounts().get(0).getCount());
+
+		// The var changes again: not sent over the page's count, also not in the next session.
+		varpChanged(VarPlayerID.TOTAL_ROYAL_TITAN_KILLS, 159);
+		scheduler.advance(60_000);
+		pages(2);
+		collector.onSessionStart();
+		scheduler.advance(60_000);
+		pages(2);
+	}
+
+	@Test
+	public void noPageCountsFromVarsWithoutTheCacheTheSettingOrASession()
+	{
+		varps.put(VarPlayerID.TOTAL_ROYAL_TITAN_KILLS, 158);
+		when(client.getVarpValue(anyInt())).thenAnswer(inv -> varps.getOrDefault((Integer) inv.getArgument(0), 0));
+		collector.onSessionStart();
+		scheduler.advance(60_000); // the tab structs are missing: nothing, no error
+		verify(session, never()).emit(eq(EventType.CLOG_PAGE), any());
+
+		realCache();
+		when(session.isActive()).thenReturn(false);
+		collector.emitVarPages();
+		verify(session, never()).emit(eq(EventType.CLOG_PAGE), any());
+		when(session.isActive()).thenReturn(true);
+		collector.emitVarPages();
+		pages(1);
+	}
 }

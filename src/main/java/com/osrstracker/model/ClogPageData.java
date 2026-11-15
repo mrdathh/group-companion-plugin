@@ -16,7 +16,7 @@ public class ClogPageData
 	@Value
 	public static class Count
 	{
-		/** The header line's label, e.g. "Royal Titans kills". */
+		/** The header line's label, e.g. "Royal Titan kills". */
 		String label;
 		int count;
 	}

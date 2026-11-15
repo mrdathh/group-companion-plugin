@@ -54,7 +54,18 @@
   login link `<server origin>/#token=<token>`) and shows whether URL, token and consent are set. It reads nothing from
   the server, shows no goals, never displays or logs the token, and can be hidden ("Show side panel"). It does not
   change the pure-sender rule.
-- `./gradlew --no-daemon clean build` passes on JDK 11: 222 unit tests, 0 failures, no javac warnings.
+- `./gradlew --no-daemon clean build` passes on JDK 11: 229 unit tests, 0 failures, no javac warnings.
+- **Collection log page kill counts without opening pages (owner request 2026-11-15), built and unit-tested, not yet
+  run in the game.** The game's page header (cache script `collection_category_count`, 2735, rev 242) shows generic
+  vars the server fills only for the page being opened, so the header itself cannot be read for unopened pages. But
+  the same totals live in per-boss player vars (`TOTAL_*_KILLS`, `TOTAL_COMPLETED_*`, `COMPLETED_CLUES*`) that other
+  client scripts read at any time (combat achievements' boss kill counts, the gravestone fee, the clue stats), so the
+  client holds them for every page. `ClogPageVars` maps 70 pages (83 header lines) to those vars with the header's
+  exact labels; `CollectionLogCollector.emitVarPages` sends them as ordinary `clog_page` events ~3 s after login and
+  2-5 s after one of them changes (counts above 0 only, only pages that changed since last sent this session). No wire
+  change. If an opened page ever shows a different number than its var, that label is taken from the page only for
+  the rest of the client run (info line "... its player var holds ..."). This replaces the kill-count varp diagnostic
+  line (old checklist item 41).
 - **Server side (group-companion-server main, 2026-11-15):** drop luck, approximate loot and the merged collection log
   are on the server's main; no further plugin change is needed for them. Drop luck uses the `loot` events'
   `source.id`, `source.combatLevel` and `killCount`; approximate loot (loot played without this plugin) comes from
@@ -77,8 +88,8 @@
   Gauntlet / Corrupted Gauntlet / Fortis Colosseum kill counts attach to their loot.
 - **Restart the developer client to pick up the latest work.** After the rename the plugin shows up as "Group
   Companion" (settings carry over: same config group). Built and unit-tested but never run in the game:
-  the collection log page kill counts (`clog_page`, 2026-11-15, checklist item 40) and the kill-count varp
-  diagnostic line (item 41),
+  the collection log page kill counts (`clog_page`, 2026-11-15, checklist item 40) and the same counts read from
+  player vars without opening pages (item 41),
   the activity signals in `status.activity` for the app's idle alerts (input idle / logout estimate, combat end,
   action idle; 2026-11-15, checklist items 37-39),
   the Group Companion side panel (copy token / copy app login link, 2026-11-15), the loot history import (`loot_history`, now trimmed to the server's limits and sent in a request of its own) and
@@ -261,12 +272,17 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     clicking a page while the log's search is on (after the whole-log read) still sends it, i.e. the game turns the
     search off when a page is chosen; if not, close and reopen the log. Nothing from a house adventure log. Debug lines
     "Collection log page not read: ..." name the reason. Look at `CollectionLogCollector.readPage`.
-41. [ ] **Kill-count varp diagnostic (nothing sent).** A few seconds after login the client log has one info line
-    "Group Companion diagnostic (not sent): kill-count varps TOTAL_HUEY_KILLS=…, TOTAL_ROYAL_TITAN_KILLS=…,
-    TOTAL_VORKATH_KILLS=…, TOTAL_SNAKEBOSS_KILLS=… (Zulrah), TOTAL_BANDOS_KILLS=…, TOTAL_JAD_KILLS=…". Compare
-    with your real kill counts (e.g. `!kc` or the log pages): if they match for bosses you have killed, a later
-    version could send kill counts without opening pages; if they are 0, those varps are not sent to the client.
-    (Only logged with the Collection log setting on.)
+41. [ ] **Page kill counts without opening pages.** Log in and do **not** open the collection log. About 3-5 s
+    later the client log has one info line "Group Companion: collection log kill counts read without opening pages: N
+    pages with counts, M sent" and the server has one `clog_page` per page you have a count on (bosses, raids, clue
+    tiers, Gnome Restaurant), e.g. Royal Titans "Royal Titan kills", Dagannoth Kings with its three counts, Chambers of
+    Xeric with normal and CM. Compare a few with the log pages / `!kc`; the app's luck view should show them without
+    any page opened. Kill a boss: one `clog_page` for that page 2-5 s later. Then open some of those pages: nothing is
+    sent when they match; an info line "... shows ... but its player var holds ..." means a var is wrong for that line
+    (report it with the page name). Check especially: Brutus, the three "(Rare)" clue pages (same count as their
+    tier?), Gnome Restaurant, Corrupted/normal Gauntlet, Theatre of Blood and Tombs of Amascut entry/expert. If N is 0
+    for an account with boss kills, the vars do not reach the client at login. Look at `ClogPageVars`,
+    `CollectionLogCollector.emitVarPages`.
 
 Also check: the plugin's Data toggles stop each group; turning one back on resends that group's snapshots.
 
@@ -307,6 +323,15 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
   measured 1.33 MB in tests (nothing trimmed); about 680 such sources would start trimming. Trimming has only been
   checked against generated records, not a real account's Loot Tracker data.
 - Kill counts depend on RuneLite's Chat Commands plugin; raid/chest/clue loot on the Loot Tracker plugin.
+- Collection log page counts from player vars (`ClogPageVars`) cover 70 pages. Still only from an opened page (no
+  var the client is known to hold for that header line): Shared Treasure Trail Rewards (total clues), Revenants,
+  Glough's Experiments (gorillas), Tormented Demons, Barbarian Assault (gambles), Hallowed Sepulchre, Last Man
+  Standing, Soul Wars, Guardians of the Rift, Giants' Foundry, Hunter Guild (rumours), Mastering Mixology, Doom of
+  Mokhaiotl, and the second lines of Wintertodt ("Rewards claimed") and Tempoross ("Reward permits claimed"). Some of
+  these have candidate vars in the cache (e.g. `TOTAL_GOTR_KILLS`, `TOTAL_MIXOLOGY_ORDERS`, `SOUL_WARS_*`,
+  `TOTAL_DOM_LEVELS`) but no client script reads them, so whether the client gets them and what they count is
+  unknown. The page list and labels follow cache rev 242; a page added later comes only from opening it until the
+  table is extended (a removed one is skipped).
 - Loadouts are cut to the server's limits: the first 500 setups in Inventory Setups' order, names (also the id) at
   200 and notes at 2,000 characters, the first 50 equipment / 100 inventory / 10 rune pouch items in slot order.
 - Collection log `clog_item` depends on the game's notification setting (chat line or popup; "off" sends nothing);
@@ -339,7 +364,8 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
 
 1. In-game checks of the latest work (restart the developer client first): item 12 (collection log rework: summary
    at login, whole-log read with the Group Ironmen Tracker on, new items by chat and popup), item 9 (a kill with a
-   kill count: the input for the server's drop luck), item 35 (loot history import; after a session played without
+   kill count: the input for the server's drop luck), item 41 (page kill counts without opening pages, then item 40),
+   item 35 (loot history import; after a session played without
    this plugin, the server's Loot Today / 7 days shows it as approximate loot), item 28 (loadouts), then the rest of
    the unticked items.
 2. The owner rebuilds and restarts the server so it has drop luck, approximate loot and the merged collection log;

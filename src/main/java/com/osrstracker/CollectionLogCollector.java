@@ -67,7 +67,7 @@ import net.runelite.client.util.Text;
  * christoabrown/group-ironmen-tracker, BSD-2-Clause, CollectionLogWidgetSubscriber), so it never toggles the
  * search off. Never for a house adventure log (someone else's log). The first read of a session is not limited;
  * after a successful read, at most one per 500 game ticks (reset on logout).</li>
- * <li>{@code clog_page}: the counts at the top of a log page the player opened themselves (e.g. "Royal Titans kills:
+ * <li>{@code clog_page}: the counts at the top of a log page the player opened themselves (e.g. "Royal Titan kills:
  * 158"). The game draws a page's item list with script {@code COLLECTION_DRAW_LIST} (2731); on the next tick the header
  * lines from index 2 on are read and parsed as "label: number" (as collection-log-luck, peanubnutter/collection-log-luck,
  * BSD-2-Clause, and the Group Ironmen Tracker's former CollectionLogManager do). Tab and page name come from the cache:
@@ -76,6 +76,12 @@ import net.runelite.client.util.Text;
  * technique), with the header title as fallback. Only the player's own log, never while the search is on or this
  * plugin's whole-log read runs, and only when a page's counts differ from what was sent for it this session. Pages
  * are never opened automatically.</li>
+ * <li>{@code clog_page} without opening the page: for the pages in {@link ClogPageVars} (bosses, raids, clue tiers,
+ * Gnome Restaurant) the same counts are read from the player vars the client already holds, a few seconds after
+ * login and after any of those vars changes (debounced). Same event, labels and page names as the page-open read;
+ * only counts above 0, and only pages with a count that differs from what was sent for it this session. If a page the
+ * player opens shows a different number than its var, that label is taken from the page only for the rest of the
+ * client run (one info line), so a wrong mapping cannot overwrite the real count.</li>
  * </ul>
  */
 @Slf4j
@@ -114,17 +120,11 @@ public class CollectionLogCollector implements SessionTracker.Listener
 	static final int[] TAB_STRUCTS = {471, 472, 473, 474, 475};
 	static final int TAB_PAGES_ENUM_PARAM = 683;
 	static final int PAGE_NAME_PARAM = 689;
-	/** A header count line: "Royal Titans kills: 158", "Dagannoth Rex kills: 1,234". */
+	/** A header count line: "Royal Titan kills: 158", "Dagannoth Rex kills: 1,234". */
 	static final Pattern PAGE_COUNT = Pattern.compile("^(.+?): ([\\d,]+)$");
-	/**
-	 * Boss kill-count player vars, logged once per login as a diagnostic only (nothing is sent): if they hold the
-	 * real kill counts, a later version could send kill counts without the player opening pages.
-	 */
-	private static final int[] DIAGNOSTIC_KILL_VARPS = {VarPlayerID.TOTAL_HUEY_KILLS, VarPlayerID.TOTAL_ROYAL_TITAN_KILLS,
-		VarPlayerID.TOTAL_VORKATH_KILLS, VarPlayerID.TOTAL_SNAKEBOSS_KILLS, VarPlayerID.TOTAL_BANDOS_KILLS,
-		VarPlayerID.TOTAL_JAD_KILLS};
-	private static final String[] DIAGNOSTIC_KILL_NAMES = {"TOTAL_HUEY_KILLS", "TOTAL_ROYAL_TITAN_KILLS",
-		"TOTAL_VORKATH_KILLS", "TOTAL_SNAKEBOSS_KILLS", "TOTAL_BANDOS_KILLS", "TOTAL_JAD_KILLS"};
+	/** Page counts from player vars: quiet period after a var change, and the minimum time between sends. */
+	static final long VAR_PAGES_DELAY_MS = 2_000;
+	static final long VAR_PAGES_MIN_INTERVAL_MS = 5_000;
 	private static final int[][] TAB_VARPS = {
 		{VarPlayerID.COLLECTION_COUNT_BOSSES, VarPlayerID.COLLECTION_COUNT_BOSSES_MAX},
 		{VarPlayerID.COLLECTION_COUNT_RAIDS, VarPlayerID.COLLECTION_COUNT_RAIDS_MAX},
@@ -184,9 +184,14 @@ public class CollectionLogCollector implements SessionTracker.Listener
 
 	// page counts (client thread only)
 	private boolean pageDrawn;
-	/** "tab|page" -> counts last sent this session. */
-	private final Map<String, List<ClogPageData.Count>> sentPages = new HashMap<>();
-	private boolean killVarpsLogged;
+	/** "tab|page" -> label -> count last sent this session (by either path). */
+	private final Map<String, Map<String, Integer>> sentPages = new HashMap<>();
+	/** Page struct -> {tab index, page name} from the cache; empty until every tab could be read. */
+	private final Map<Integer, Object[]> pageIndex = new HashMap<>();
+	/** "struct|label" whose var disagreed with the opened page: taken from the page only (kept for the client run). */
+	private final Set<String> varMismatch = new HashSet<>();
+	private final Throttle varPages;
+	private boolean varPagesLogged;
 
 	// new items
 	private boolean popupStarted;
@@ -205,6 +210,8 @@ public class CollectionLogCollector implements SessionTracker.Listener
 		this.time = time;
 		this.summary = new Throttle(executor, time, SUMMARY_DELAY_MS, SUMMARY_MIN_INTERVAL_MS, SUMMARY_MIN_INTERVAL_MS,
 			() -> clientThread.invoke(this::emitSummary));
+		this.varPages = new Throttle(executor, time, VAR_PAGES_DELAY_MS, VAR_PAGES_MIN_INTERVAL_MS,
+			VAR_PAGES_MIN_INTERVAL_MS, () -> clientThread.invoke(this::emitVarPages));
 	}
 
 	// ------------------------------------------------------------------ clog_item
@@ -288,6 +295,11 @@ public class CollectionLogCollector implements SessionTracker.Listener
 		{
 			summary.trigger();
 		}
+		if (event.getVarbitId() == -1 ? ClogPageVars.VARPS.contains(event.getVarpId())
+			: ClogPageVars.VARBITS.contains(event.getVarbitId()))
+		{
+			varPages.trigger();
+		}
 	}
 
 	/** Client thread. */
@@ -329,7 +341,6 @@ public class CollectionLogCollector implements SessionTracker.Listener
 			return;
 		}
 		summaryRetries = 0;
-		logKillVarpsOnce(); // player vars are loaded by now (the log counts are)
 		session.emit(EventType.COLLECTION_LOG_SUMMARY, data);
 	}
 
@@ -436,7 +447,8 @@ public class CollectionLogCollector implements SessionTracker.Listener
 			log.debug("Collection log page not read: unknown tab {}", tab);
 			return;
 		}
-		String page = pageName(tab, client.getVarbitValue(VarbitID.COLLECTION_LAST_CATEGORY));
+		int struct = pageStruct(tab, client.getVarbitValue(VarbitID.COLLECTION_LAST_CATEGORY));
+		String page = pageName(struct);
 		if (page == null)
 		{
 			page = texts.get(0) == null ? "" : Text.removeTags(texts.get(0)).trim();
@@ -445,13 +457,148 @@ public class CollectionLogCollector implements SessionTracker.Listener
 		{
 			return;
 		}
+		checkVars(struct, page, counts);
 		String key = TAB_NAMES[tab] + "|" + page;
-		if (counts.equals(sentPages.get(key)))
+		if (!ClogPageVars.changed(counts, sentPages.get(key)))
 		{
 			return;
 		}
-		sentPages.put(key, counts);
+		markSent(key, counts);
 		session.emit(EventType.CLOG_PAGE, new ClogPageData(TAB_NAMES[tab], page, counts));
+	}
+
+	private void markSent(String key, List<ClogPageData.Count> counts)
+	{
+		Map<String, Integer> sent = sentPages.computeIfAbsent(key, k -> new HashMap<>());
+		for (ClogPageData.Count c : counts)
+		{
+			sent.put(c.getLabel(), c.getCount());
+		}
+	}
+
+	/**
+	 * An opened page whose header disagrees with the var this plugin reads for a label: from now on (this client
+	 * run) that label comes from the page only, so the var path cannot overwrite the page's real count.
+	 */
+	private void checkVars(int struct, String page, List<ClogPageData.Count> counts)
+	{
+		ClogPageVars.Page vars = ClogPageVars.BY_STRUCT.get(struct);
+		if (vars == null)
+		{
+			return;
+		}
+		for (ClogPageData.Count c : counts)
+		{
+			ClogPageVars.Var v = vars.var(c.getLabel());
+			if (v == null)
+			{
+				continue;
+			}
+			int value = ClogPageVars.read(v, client::getVarpValue, client::getVarbitValue);
+			if (value != c.getCount() && varMismatch.add(struct + "|" + c.getLabel()))
+			{
+				log.info("Group Companion: collection log page {} shows {} {} but its player var holds {}; that count is"
+					+ " now taken from the page only", page, c.getLabel(), c.getCount(), value);
+			}
+		}
+	}
+
+	/**
+	 * Client thread: every page whose counts the player vars hold, without opening it. Sends the pages whose counts
+	 * changed since they were last sent this session (counts above 0 only).
+	 */
+	void emitVarPages()
+	{
+		if (!config.sendCollectionLog() || !session.isActive() || !loadPageIndex())
+		{
+			return;
+		}
+		int withCounts = 0;
+		int sent = 0;
+		for (ClogPageVars.Page p : ClogPageVars.PAGES)
+		{
+			Object[] ref = pageIndex.get(p.struct);
+			if (ref == null)
+			{
+				continue; // not in this cache's log (removed or moved): nothing to name it by
+			}
+			Set<String> skip = new HashSet<>();
+			for (ClogPageVars.Var v : p.vars)
+			{
+				if (varMismatch.contains(p.struct + "|" + v.label))
+				{
+					skip.add(v.label);
+				}
+			}
+			List<ClogPageData.Count> counts = ClogPageVars.counts(p, client::getVarpValue, client::getVarbitValue, skip);
+			if (counts.isEmpty())
+			{
+				continue;
+			}
+			withCounts++;
+			String tab = TAB_NAMES[(Integer) ref[0]];
+			String page = (String) ref[1];
+			String key = tab + "|" + page;
+			if (!ClogPageVars.changed(counts, sentPages.get(key)))
+			{
+				continue;
+			}
+			markSent(key, counts);
+			session.emit(EventType.CLOG_PAGE, new ClogPageData(tab, page, counts));
+			sent++;
+		}
+		if (!varPagesLogged)
+		{
+			varPagesLogged = true;
+			log.info("Group Companion: collection log kill counts read without opening pages: {} pages with counts, {} sent",
+				withCounts, sent);
+		}
+		else if (sent > 0)
+		{
+			log.debug("Collection log page counts from player vars: {} pages sent", sent);
+		}
+	}
+
+	/**
+	 * Client thread: page struct -> tab and name for every page of the five tabs (cache structs and enums, read once
+	 * per client run). False when the cache could not be read (tried again next time).
+	 */
+	boolean loadPageIndex()
+	{
+		if (!pageIndex.isEmpty())
+		{
+			return true;
+		}
+		Map<Integer, Object[]> index = new HashMap<>();
+		try
+		{
+			for (int tab = 0; tab < TAB_STRUCTS.length; tab++)
+			{
+				StructComposition tabStruct = client.getStructComposition(TAB_STRUCTS[tab]);
+				EnumComposition pages = tabStruct == null ? null : client.getEnum(tabStruct.getIntValue(TAB_PAGES_ENUM_PARAM));
+				int[] structs = pages == null ? null : pages.getIntVals();
+				if (structs == null || structs.length == 0)
+				{
+					log.debug("Collection log page index: tab {} has no pages in the cache", TAB_NAMES[tab]);
+					return false;
+				}
+				for (int struct : structs)
+				{
+					String name = pageName(struct);
+					if (name != null && !index.containsKey(struct))
+					{
+						index.put(struct, new Object[]{tab, name});
+					}
+				}
+			}
+		}
+		catch (RuntimeException e)
+		{
+			log.debug("Collection log page index could not be read", e);
+			return false;
+		}
+		pageIndex.putAll(index);
+		return !pageIndex.isEmpty();
 	}
 
 	/**
@@ -495,41 +642,44 @@ public class CollectionLogCollector implements SessionTracker.Listener
 	/** Page name from the cache (tab struct -> page enum -> page struct name); null if the lookup fails. */
 	String pageName(int tab, int page)
 	{
+		return pageName(pageStruct(tab, page));
+	}
+
+	/** The page's cache struct (tab struct -> page enum -> page index); -1 if the lookup fails. */
+	int pageStruct(int tab, int page)
+	{
 		try
 		{
 			StructComposition tabStruct = client.getStructComposition(TAB_STRUCTS[tab]);
 			EnumComposition pages = tabStruct == null ? null : client.getEnum(tabStruct.getIntValue(TAB_PAGES_ENUM_PARAM));
 			int[] structs = pages == null ? null : pages.getIntVals();
-			if (structs == null || page < 0 || page >= structs.length)
-			{
-				return null;
-			}
-			StructComposition pageStruct = client.getStructComposition(structs[page]);
+			return structs == null || page < 0 || page >= structs.length ? -1 : structs[page];
+		}
+		catch (RuntimeException e)
+		{
+			log.debug("Collection log page lookup failed (tab {}, page {})", tab, page, e);
+			return -1;
+		}
+	}
+
+	/** A page struct's name (param 689); null if unknown. */
+	String pageName(int struct)
+	{
+		if (struct < 0)
+		{
+			return null;
+		}
+		try
+		{
+			StructComposition pageStruct = client.getStructComposition(struct);
 			String name = pageStruct == null ? null : pageStruct.getStringValue(PAGE_NAME_PARAM);
 			return name == null || name.trim().isEmpty() ? null : Text.removeTags(name).trim();
 		}
 		catch (RuntimeException e)
 		{
-			log.debug("Collection log page name lookup failed (tab {}, page {})", tab, page, e);
+			log.debug("Collection log page name lookup failed (struct {})", struct, e);
 			return null;
 		}
-	}
-
-	/** Once per login, info level, nothing sent: the boss kill-count varps, for the owner to compare in game. */
-	void logKillVarpsOnce()
-	{
-		if (killVarpsLogged)
-		{
-			return;
-		}
-		killVarpsLogged = true;
-		StringBuilder b = new StringBuilder();
-		for (int i = 0; i < DIAGNOSTIC_KILL_VARPS.length; i++)
-		{
-			b.append(i == 0 ? "" : ", ").append(DIAGNOSTIC_KILL_NAMES[i]).append('=')
-				.append(client.getVarpValue(DIAGNOSTIC_KILL_VARPS[i]));
-		}
-		log.info("Group Companion diagnostic (not sent): kill-count varps {}", b);
 	}
 
 	// ------------------------------------------------------------------ full log
@@ -819,7 +969,6 @@ public class CollectionLogCollector implements SessionTracker.Listener
 
 	private void resetRateLimit()
 	{
-		killVarpsLogged = false;
 		pageDrawn = false;
 		reading = false;
 		lastReadTick = -1;
@@ -837,6 +986,7 @@ public class CollectionLogCollector implements SessionTracker.Listener
 		}
 		popupStarted = false;
 		summary.cancel();
+		varPages.cancel();
 		resetRateLimit();
 	}
 
@@ -844,8 +994,10 @@ public class CollectionLogCollector implements SessionTracker.Listener
 	public void onSessionStart()
 	{
 		sentPages.clear();
+		varPagesLogged = false;
 		summaryRetries = 0;
 		summary.triggerIn(SUMMARY_LOGIN_SETTLE_MS);
+		varPages.triggerIn(SUMMARY_LOGIN_SETTLE_MS);
 	}
 
 	@Override
@@ -853,6 +1005,7 @@ public class CollectionLogCollector implements SessionTracker.Listener
 	{
 		emitNewItems();
 		summary.cancel();
+		varPages.cancel();
 		reading = false;
 	}
 }
