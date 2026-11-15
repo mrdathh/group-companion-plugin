@@ -19,6 +19,9 @@ rename them.
   URL/token/consent edits are applied by `TrackerSyncPlugin` 2 s after the last edit.
 - `Throttle`, `TimeSource` — debounce/min-interval/max-wait on the injected executor; replaceable clock for tests.
 - `ItemMapper`, `LocationReader`, `HouseTracker` — item values; real-world location (instances, boats, house).
+- `ActivityTracker` — `status.activity` for the app's idle alerts (input idle + logout estimate, combat, action idle),
+  modelled on core's Idle Notifier. Every field changes only on a transition (keeps `status` traffic low); observe only,
+  never simulate input or prevent a logout. Thresholds live in the app/server, not here.
 - Collectors (one per data group): `LootCollector`, `SkillsCollector`, `ContainerCollector`, `QuestDiaryCollector`,
   `CollectionLogCollector`, `DeathCollector`, `StatusCollector`, `SlayerCollector`, `KillCountCollector`,
   `CombatAchievementCollector`, `timers/TimersCollector`, `StorageCollector` (rune pouch, quiver, plank sack, potion

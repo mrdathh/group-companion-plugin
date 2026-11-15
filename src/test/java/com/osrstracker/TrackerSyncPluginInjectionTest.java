@@ -202,9 +202,11 @@ public class TrackerSyncPluginInjectionTest
 		for (int i = 1; i <= 2; i++)
 		{
 			plugin.startUp();
-			verify(eventBus, times(18 * i)).register(any(Object.class));
+			verify(eventBus, times(19 * i)).register(any(Object.class));
+			verify(eventBus, times(i)).register(any(ActivityTracker.class));
 			plugin.shutDown();
-			verify(eventBus, times(18 * i)).unregister(any(Object.class));
+			verify(eventBus, times(19 * i)).unregister(any(Object.class));
+			verify(eventBus, times(i)).unregister(any(ActivityTracker.class));
 		}
 		assertEquals(0, server.getRequestCount());
 	}

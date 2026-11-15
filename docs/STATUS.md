@@ -54,7 +54,7 @@
   login link `<server origin>/#token=<token>`) and shows whether URL, token and consent are set. It reads nothing from
   the server, shows no goals, never displays or logs the token, and can be hidden ("Show side panel"). It does not
   change the pure-sender rule.
-- `./gradlew --no-daemon clean build` passes on JDK 11: 201 unit tests, 0 failures, no javac warnings.
+- `./gradlew --no-daemon clean build` passes on JDK 11: 216 unit tests, 0 failures, no javac warnings.
 - **Server side (group-companion-server main, 2026-11-15):** drop luck, approximate loot and the merged collection log
   are on the server's main; no further plugin change is needed for them. Drop luck uses the `loot` events'
   `source.id`, `source.combatLevel` and `killCount`; approximate loot (loot played without this plugin) comes from
@@ -77,6 +77,8 @@
   Gauntlet / Corrupted Gauntlet / Fortis Colosseum kill counts attach to their loot.
 - **Restart the developer client to pick up the latest work.** After the rename the plugin shows up as "Group
   Companion" (settings carry over: same config group). Built and unit-tested but never run in the game:
+  the activity signals in `status.activity` for the app's idle alerts (input idle / logout estimate, combat end,
+  action idle; 2026-11-15, checklist items 37-39),
   the Group Companion side panel (copy token / copy app login link, 2026-11-15), the loot history import (`loot_history`, now trimmed to the server's limits and sent in a request of its own) and
   the new loot debug logging. Storages, loadouts, kingdom, diaries
   etc. reached the server in the owner's run (2026-11-14); no live `loot` has been seen yet because the owner had
@@ -236,6 +238,19 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     the clipboard (label shows "Copied" for 2 s); "Copy app login link" gives `https://<server>/#token=…` that signs
     the app in; both disabled without a token; the status line matches the settings; the token is not shown anywhere;
     "Show side panel" off removes the icon. Look at `TrackerSyncPanel`.
+37. [ ] **Idle logout estimate.** Stand somewhere safe and do not touch mouse or keyboard: about 10 s later one
+    `status` has `activity.inputIdleSince` (≈ when you let go) and `logoutAt` ≈ 5 min after it (later if a plugin
+    such as Logout Timer raised the client's idle timeout). Note the real logout time and compare with `logoutAt`.
+    Moving the mouse over the game clears both in the next status. Repeat while an NPC keeps hitting you (e.g. a
+    low-level monster): `logoutAt` moves to ≈ 20 min after your last click or key press. Also check that nothing in
+    `activity` changes while you stay idle (the 30 s refreshes repeat the same values). Look at `ActivityTracker`.
+38. [ ] **Combat end.** Attack an NPC: `activity.inCombat` true, `combatEndedAt` null. Kill it and stand still:
+    about 5 s after the last hitsplat `inCombat` false and `combatEndedAt` set. Being hit without a target (or a
+    splash on you) also counts as combat.
+39. [ ] **Action idle while skilling.** Chop a tree / fish / smith for a minute: `activity.actionIdleSince` stays
+    null through the short pauses between actions. Stop: about 3 s later it is set (to the moment you stopped);
+    walking a tile clears it. Note any skill where it flickers while still working (a gap of 3 s or more without an
+    animation, movement or target).
 
 Also check: the plugin's Data toggles stop each group; turning one back on resends that group's snapshots.
 

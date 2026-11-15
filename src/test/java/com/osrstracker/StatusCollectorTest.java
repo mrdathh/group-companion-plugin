@@ -31,7 +31,8 @@ public class StatusCollectorTest
 		TrackerSyncConfig config = mock(TrackerSyncConfig.class);
 		when(config.sendStatus()).thenReturn(true);
 		when(session.isActive()).thenReturn(true);
-		collector = new StatusCollector(mock(Client.class), session, config, mock(LocationReader.class), new TimeSource());
+		collector = new StatusCollector(mock(Client.class), session, config, mock(LocationReader.class), new TimeSource(),
+			mock(ActivityTracker.class));
 	}
 
 	private static StatusData status(int hp, int world)
@@ -72,6 +73,22 @@ public class StatusCollectorTest
 		verify(session, never()).emitRefresh(any(), any());
 		collector.offer(status(40, 301), 2 * StatusCollector.REFRESH_MS + 10_000);
 		verify(session).emitRefresh(EventType.STATUS, status(40, 301));
+	}
+
+	@Test
+	public void anActivityTransitionIsSentWithTheNextAllowedStatus()
+	{
+		StatusData busy = new StatusData(new StatusData.CurMax(50, 99), new StatusData.CurMax(1, 1), 100, 100, 301,
+			new Location(3222, 3218, 0, 12850, false, false, null), null,
+			new com.osrstracker.model.ActivityData(null, null, true, null, null));
+		StatusData ended = new StatusData(new StatusData.CurMax(50, 99), new StatusData.CurMax(1, 1), 100, 100, 301,
+			new Location(3222, 3218, 0, 12850, false, false, null), null,
+			new com.osrstracker.model.ActivityData(null, null, false, "2026-11-15T14:00:00.600Z", null));
+		collector.offer(busy, 0);
+		collector.offer(ended, 600);   // combat ended on the next game tick: within the one-second limit
+		verify(session, never()).emit(EventType.STATUS, ended);
+		collector.offer(ended, 1200);
+		verify(session).emit(EventType.STATUS, ended);
 	}
 
 	@Test

@@ -99,6 +99,9 @@ public class TrackerSyncPlugin extends Plugin
 	private HouseTracker houseTracker;
 
 	@Inject
+	private ActivityTracker activityTracker;
+
+	@Inject
 	private StorageCollector storageCollector;
 
 	@Inject
@@ -143,6 +146,7 @@ public class TrackerSyncPlugin extends Plugin
 			killCountCollector, combatAchievementCollector, storageCollector, bagCollector, depositCollector,
 			loadoutCollector, kingdomCollector, lootHistoryCollector);
 		eventBus.register(houseTracker);
+		eventBus.register(activityTracker);
 		for (SessionTracker.Listener c : collectors)
 		{
 			eventBus.register(c);
@@ -199,6 +203,8 @@ public class TrackerSyncPlugin extends Plugin
 		}
 		eventBus.unregister(houseTracker);
 		houseTracker.reset();
+		eventBus.unregister(activityTracker);
+		activityTracker.reset();
 		session.clearListeners();
 		skillsCollector.shutDown();
 		containerCollector.shutDown();

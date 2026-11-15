@@ -1,5 +1,6 @@
 package com.osrstracker;
 
+import com.osrstracker.model.ActivityData;
 import com.osrstracker.model.EventType;
 import com.osrstracker.model.Location;
 import com.osrstracker.model.StatusData;
@@ -24,6 +25,8 @@ import net.runelite.client.util.Text;
  * <li>re-sent unchanged every 30 s, so the app can tell a player standing still from a stale one;</li>
  * <li>sent at once after a world hop, ignoring the one-second limit.</li>
  * </ul>
+ * Includes {@code activity} from {@link ActivityTracker}, whose fields change only on transitions, so an idle
+ * alert's transition goes out with the next allowed status (within about a second).
  */
 @Singleton
 public class StatusCollector implements SessionTracker.Listener
@@ -36,6 +39,7 @@ public class StatusCollector implements SessionTracker.Listener
 	private final TrackerSyncConfig config;
 	private final LocationReader locationReader;
 	private final TimeSource time;
+	private final ActivityTracker activity;
 
 	private long lastEmit = Long.MIN_VALUE / 4;
 	/** Last time the content changed or an unchanged refresh was forced. */
@@ -43,8 +47,10 @@ public class StatusCollector implements SessionTracker.Listener
 	private StatusData lastStatus;
 
 	@Inject
-	StatusCollector(Client client, SessionTracker session, TrackerSyncConfig config, LocationReader locationReader, TimeSource time)
+	StatusCollector(Client client, SessionTracker session, TrackerSyncConfig config, LocationReader locationReader, TimeSource time,
+		ActivityTracker activity)
 	{
+		this.activity = activity;
 		this.client = client;
 		this.session = session;
 		this.config = config;
@@ -55,11 +61,18 @@ public class StatusCollector implements SessionTracker.Listener
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
-		if (!config.sendStatus() || !session.isActive())
+		if (!session.isActive())
+		{
+			activity.reset();
+			return;
+		}
+		// Tracked every tick, also while status is off, so switching it on starts from the true state.
+		ActivityData signals = activity.tick();
+		if (!config.sendStatus())
 		{
 			return;
 		}
-		StatusData status = read();
+		StatusData status = read(signals);
 		if (status != null)
 		{
 			offer(status, time.nowMillis());
@@ -95,7 +108,7 @@ public class StatusCollector implements SessionTracker.Listener
 	}
 
 	/** Client thread. */
-	StatusData read()
+	StatusData read(ActivityData signals)
 	{
 		Player local = client.getLocalPlayer();
 		Location location = locationReader.read();
@@ -110,7 +123,8 @@ public class StatusCollector implements SessionTracker.Listener
 			clampPercent(client.getVarpValue(VarPlayerID.SA_ENERGY) / 10), // 0-1000
 			client.getWorld(),
 			location,
-			interacting(local.getInteracting()));
+			interacting(local.getInteracting()),
+			signals);
 	}
 
 	/** NPCs only; never anything about another player. */

@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import com.osrstracker.model.AccountRef;
+import com.osrstracker.model.ActivityData;
 import com.osrstracker.model.ClientInfo;
 import com.osrstracker.model.ClogItemData;
 import com.osrstracker.model.CollectionLogData;
@@ -303,6 +304,34 @@ public class ProtocolJsonTest
 		assertJson(envelope("status", "{\"hp\":{\"cur\":10,\"max\":10},\"prayer\":{\"cur\":1,\"max\":1},"
 			+ "\"runEnergy\":100,\"specialAttack\":100,\"world\":301,\"location\":" + LOCATION_JSON + ",\"interacting\":null}"),
 			event(EventType.STATUS, data));
+	}
+
+	@Test
+	public void statusWithActivityWhileIdleAfterCombat()
+	{
+		StatusData data = new StatusData(new StatusData.CurMax(30, 99), new StatusData.CurMax(5, 70), 100, 100, 301,
+			new Location(3222, 3218, 0, 12850, false, false, null), null,
+			new ActivityData("2026-11-15T14:00:00.000Z", "2026-11-15T14:05:00.000Z", false, "2026-11-15T13:59:58.200Z",
+				"2026-11-15T13:59:58.800Z"));
+		assertJson(envelope("status", "{\"hp\":{\"cur\":30,\"max\":99},\"prayer\":{\"cur\":5,\"max\":70},"
+			+ "\"runEnergy\":100,\"specialAttack\":100,\"world\":301,\"location\":" + LOCATION_JSON + ",\"interacting\":null,"
+			+ "\"activity\":{\"inputIdleSince\":\"2026-11-15T14:00:00.000Z\",\"logoutAt\":\"2026-11-15T14:05:00.000Z\","
+			+ "\"inCombat\":false,\"combatEndedAt\":\"2026-11-15T13:59:58.200Z\",\"actionIdleSince\":\"2026-11-15T13:59:58.800Z\"}}"),
+			event(EventType.STATUS, data));
+	}
+
+	@Test
+	public void statusWithActivityInCombatSendsExplicitNulls()
+	{
+		StatusData data = new StatusData(new StatusData.CurMax(55, 99), new StatusData.CurMax(43, 70), 87, 50, 302,
+			new Location(3222, 3218, 0, 12850, false, false, null),
+			new StatusData.Interacting("Abyssal demon", 415, 12, 30),
+			new ActivityData(null, null, true, null, null));
+		assertJson(envelope("status", "{\"hp\":{\"cur\":55,\"max\":99},\"prayer\":{\"cur\":43,\"max\":70},"
+			+ "\"runEnergy\":87,\"specialAttack\":50,\"world\":302,\"location\":" + LOCATION_JSON + ","
+			+ "\"interacting\":{\"name\":\"Abyssal demon\",\"id\":415,\"hpRatio\":12,\"hpScale\":30},"
+			+ "\"activity\":{\"inputIdleSince\":null,\"logoutAt\":null,\"inCombat\":true,\"combatEndedAt\":null,"
+			+ "\"actionIdleSince\":null}}"), event(EventType.STATUS, data));
 	}
 
 	@Test

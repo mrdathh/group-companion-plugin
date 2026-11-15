@@ -16,6 +16,10 @@ BSD 2-Clause License, reproduced at the end of this file.
 - `src/main/java/com/osrstracker/SlayerCollector.java`: task, points and streak reading ported from
   `net.runelite.client.plugins.slayer.SlayerPlugin` (updateTask, addCounter).
   Copyright (c) 2017, Tyler <https://github.com/tylerthardy>; Copyright (c) 2018, Shaun Dreclin.
+- `src/main/java/com/osrstracker/ActivityTracker.java`: own code following the idle rules of
+  `net.runelite.client.plugins.idlenotifier.IdleNotifierPlugin` (checkIdleLogout's idle counters and combat
+  logout, the 8-tick hitsplat combat window, the "Attack" NPC target test, animation/interaction/movement idle).
+  Copyright (c) 2016-2017, Abel Briggs; Copyright (c) 2017, Kronos <https://github.com/KronosDesign>.
 
 ## Group Ironmen Tracker (https://github.com/christoabrown/group-ironmen-tracker)
 

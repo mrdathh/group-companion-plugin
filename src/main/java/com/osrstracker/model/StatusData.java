@@ -1,10 +1,12 @@
 package com.osrstracker.model;
 
 import com.google.gson.annotations.JsonAdapter;
+import lombok.AllArgsConstructor;
 import lombok.Value;
 
 /** protocol.ts StatusData (volatile live status). */
 @Value
+@AllArgsConstructor
 public class StatusData
 {
 	CurMax hp;
@@ -18,6 +20,14 @@ public class StatusData
 	/** The NPC the player is fighting or talking to; never another player. Sent as null when none. */
 	@JsonAdapter(value = WriteNull.class, nullSafe = false)
 	Interacting interacting;
+	/** Idle/combat signals; optional in the contract, left out when null. */
+	ActivityData activity;
+
+	public StatusData(CurMax hp, CurMax prayer, int runEnergy, int specialAttack, int world, Location location,
+		Interacting interacting)
+	{
+		this(hp, prayer, runEnergy, specialAttack, world, location, interacting, null);
+	}
 
 	@Value
 	public static class CurMax
