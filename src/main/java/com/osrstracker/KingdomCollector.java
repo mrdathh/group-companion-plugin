@@ -21,9 +21,11 @@ import net.runelite.client.eventbus.Subscribe;
  * Kingdom of Miscellania (under the "Timers" setting). The kingdom varbits come with the other player vars at
  * login, so they are readable anywhere (technique after the Mystix plugin's KingdomMonitor,
  * rjmccaskell/mystix-plugin, BSD-2-Clause): approval points out of 127 (shown as 0–100), coffer coins,
- * workers per resource. Nothing is sent before Throne of Miscellania is finished, nor for an approval of 0 (vars
- * not loaded yet; the floor after the quest is 25%). Sent 5 s after login, then when a kingdom varbit changes,
- * at most once per 5 s.
+ * workers per resource, the resource points stored since the last collection ({@code MISC_RESTOTAL_LOWBITS},
+ * 18 bits = the game's 262,143-point store; 0 after collecting) and the hardwood, herb/flax and raw/cooked choices
+ * (value meanings from the game's own interface scripts for {@code misc_both_manage}). Nothing is sent before Throne
+ * of Miscellania is finished, nor for an approval of 0 (vars not loaded yet; the floor after the quest is 25%).
+ * Sent 5 s after login, then when a kingdom varbit changes, at most once per 5 s.
  */
 @Singleton
 public class KingdomCollector implements SessionTracker.Listener
@@ -32,10 +34,12 @@ public class KingdomCollector implements SessionTracker.Listener
 	static final long MIN_INTERVAL_MS = 5_000;
 	static final long LOGIN_SETTLE_MS = 5_000;
 	static final int APPROVAL_MAX = 127;
+	static final int RESOURCE_POINTS_MAX = 262_143;
 
 	static final Set<Integer> KINGDOM_VARBITS = ImmutableSet.of(
 		VarbitID.MISC_APPROVAL, VarbitID.MISC_COFFERS, VarbitID.MISC_POINTS_WOOD, VarbitID.MISC_POINTS_HERB,
-		VarbitID.MISC_POINTS_FISH, VarbitID.MISC_POINTS_MINE, VarbitID.MISC_POINTS_RAREWOOD, VarbitID.MISC_POINTS_FARM);
+		VarbitID.MISC_POINTS_FISH, VarbitID.MISC_POINTS_MINE, VarbitID.MISC_POINTS_RAREWOOD, VarbitID.MISC_POINTS_FARM,
+		VarbitID.MISC_RESTOTAL_LOWBITS, VarbitID.MISC_RAREWOOD_TYPE, VarbitID.MISC_HERBS_OR_FLAX, VarbitID.MISC_COOKED);
 
 	private final Client client;
 	private final SessionTracker session;
@@ -91,7 +95,9 @@ public class KingdomCollector implements SessionTracker.Listener
 			client.getVarbitValue(VarbitID.MISC_POINTS_WOOD), client.getVarbitValue(VarbitID.MISC_POINTS_HERB),
 			client.getVarbitValue(VarbitID.MISC_POINTS_FISH), client.getVarbitValue(VarbitID.MISC_POINTS_MINE),
 			client.getVarbitValue(VarbitID.MISC_POINTS_RAREWOOD), client.getVarbitValue(VarbitID.MISC_POINTS_FARM),
-			Quest.ROYAL_TROUBLE.getState(client) == QuestState.FINISHED);
+			Quest.ROYAL_TROUBLE.getState(client) == QuestState.FINISHED, client.getVarbitValue(VarbitID.MISC_RESTOTAL_LOWBITS),
+			client.getVarbitValue(VarbitID.MISC_RAREWOOD_TYPE), client.getVarbitValue(VarbitID.MISC_HERBS_OR_FLAX),
+			client.getVarbitValue(VarbitID.MISC_COOKED));
 		if (data != null)
 		{
 			session.emit(EventType.KINGDOM, data);
@@ -100,7 +106,7 @@ public class KingdomCollector implements SessionTracker.Listener
 
 	/** Null when the approval var is not loaded yet. Visible for tests. */
 	static KingdomData read(int approvalPoints, int coffer, int wood, int herbs, int fish, int mining, int hardwood,
-		int farming, boolean royalTrouble)
+		int farming, boolean royalTrouble, int resourcePoints, int rarewoodType, int herbsOrFlax, int cooked)
 	{
 		if (approvalPoints <= 0)
 		{
@@ -113,7 +119,24 @@ public class KingdomCollector implements SessionTracker.Listener
 		workers.put("Mining", mining);
 		workers.put("Hardwood", hardwood);
 		workers.put("Farming", farming);
-		int approval = Math.round(Math.min(approvalPoints, APPROVAL_MAX) * 100f / APPROVAL_MAX);
-		return new KingdomData(approval, coffer, workers, royalTrouble);
+		int points = Math.min(approvalPoints, APPROVAL_MAX);
+		int approval = Math.round(points * 100f / APPROVAL_MAX);
+		return new KingdomData(approval, coffer, workers, royalTrouble, points,
+			Math.max(0, Math.min(resourcePoints, RESOURCE_POINTS_MAX)), hardwoodChoice(rarewoodType),
+			herbsOrFlax == 1 ? "flax" : "herbs", cooked == 1 ? "cooked" : "raw");
+	}
+
+	/** misc_rarewood_type: 0 mahogany, 1 teak, 2 both (the manage interface's three buttons). */
+	static String hardwoodChoice(int rarewoodType)
+	{
+		switch (rarewoodType)
+		{
+			case 1:
+				return "teak";
+			case 2:
+				return "both";
+			default:
+				return "mahogany";
+		}
 	}
 }

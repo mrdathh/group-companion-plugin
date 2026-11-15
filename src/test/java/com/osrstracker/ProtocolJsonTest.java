@@ -507,8 +507,12 @@ public class ProtocolJsonTest
 		Map<String, Integer> workers = new LinkedHashMap<>();
 		workers.put("Wood", 5);
 		workers.put("Fishing", 5);
+		assertJson(envelope("kingdom", "{\"approval\":75,\"coffer\":750000,\"workers\":{\"Wood\":5,\"Fishing\":5},\"royalTrouble\":true,"
+				+ "\"approvalPoints\":95,\"resourcePoints\":4572,\"hardwood\":\"both\",\"herbs\":\"flax\",\"fish\":\"cooked\"}"),
+			event(EventType.KINGDOM, new KingdomData(75, 750000, workers, true, 95, 4572, "both", "flax", "cooked")));
+		// The optional fields are left out when unknown.
 		assertJson(envelope("kingdom", "{\"approval\":75,\"coffer\":750000,\"workers\":{\"Wood\":5,\"Fishing\":5},\"royalTrouble\":true}"),
-			event(EventType.KINGDOM, new KingdomData(75, 750000, workers, true)));
+			event(EventType.KINGDOM, new KingdomData(75, 750000, workers, true, null, null, null, null, null)));
 		assertEquals("kingdom", EventType.stateKey(event(EventType.KINGDOM, null)));
 	}
 

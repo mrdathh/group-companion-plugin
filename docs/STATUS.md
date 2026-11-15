@@ -55,6 +55,13 @@
   the server, shows no goals, never displays or logs the token, and can be hidden ("Show side panel"). It does not
   change the pure-sender rule.
 - `./gradlew --no-daemon clean build` passes on JDK 11: 229 unit tests, 0 failures, no javac warnings.
+- **Kingdom stored resources and choices (owner request 2026-11-15), built and unit-tested, not yet run in the game.**
+  `kingdom` also carries `approvalPoints` (0-127), `resourcePoints` (varbit `MISC_RESTOTAL_LOWBITS`: bits 0-17 of the
+  same player var as the approval, 18 bits = the game's 262,143-point store, so very likely the points gathered
+  since the last collection), and the hardwood (`MISC_RAREWOOD_TYPE` 0 mahogany / 1 teak / 2 both), herb/flax
+  (`MISC_HERBS_OR_FLAX`) and raw/cooked (`MISC_COOKED`) choices, decoded from the game's `misc_both_manage` interface
+  scripts. The server turns them into a predicted stock, a planner and alerts (server `docs/PROTOCOL.md` "Kingdom").
+  Optional fields: an older server strips them. Checklist item 32.
 - **Collection log page kill counts without opening pages (owner request 2026-11-15), built and unit-tested, not yet
   run in the game.** The game's page header (cache script `collection_category_count`, 2735, rev 242) shows generic
   vars the server fills only for the page being opened, so the header itself cannot be read for unopened pages. But
@@ -235,8 +242,14 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
 31. [ ] **Slayer detail.** `slayer.master` names the master, `wildernessStreak`, `blocked` matches the block list in the
     rewards interface for the current master, `unlocks` matches purchased unlocks/extensions. Look at
     `SlayerCollector` (unlock `bit` column read as a bit index: verify).
-32. [ ] **Kingdom.** With Throne of Miscellania done: `kingdom` approval (compare with the in-game %), coffer, workers per
-    resource, royalTrouble. Check whether approval changes while away without visiting. Look at `KingdomCollector`.
+32. [ ] **Kingdom.** With Throne of Miscellania done: `kingdom` approval (compare with the in-game %) and
+    `approvalPoints`, coffer, workers per resource, royalTrouble. Check whether approval, coffer and `resourcePoints`
+    change while away without visiting (log in elsewhere on a later day: same values = the game updates them only on a
+    visit). **Stored resources:** before collecting, compare the app's Kingdom screen ("In the kingdom now") with what
+    Advisor Ghrim offers; `resourcePoints` should drop to 0 right after collecting, and grow by about 1,143 a day at
+    100 % approval and a full coffer after Royal Trouble (762 before). **Choices:** switch hardwood (mahogany / teak /
+    both), herbs/flax and the cooked-fish toggle in the manage interface and confirm: `hardwood`, `herbs`, `fish` follow
+    (note whether they change already while the interface is open, before confirming). Look at `KingdomCollector`.
 33. [ ] **Tears of Guthix.** Talk to Juna and play: `timers` entry tears_of_guthix GROWING with readyAt 00:00 UTC seven
     days after the visit day; before any visit seen: UNKNOWN. Look at `timers/TimersCollector`.
 34. [ ] **Group name (group ironman).** Requests carry `account.group` with the group's name within a few ticks of
@@ -308,8 +321,10 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
   until the data is refreshed. Completion = "all tasks done" or "reward claimed" varbit.
 - Slayer: `blocked` is only the current master's list; Spria (9) has none; master names 1–9 are from the OSRS Wiki's
   varbit table (facts only), 10 = Mortimer from RuneLite core.
-- Kingdom: workers are named Wood, Herbs/flax, Fishing, Mining, Hardwood, Farming (the herb/flax and hardwood
-  choices are not decoded). Whether the approval var decays live while away is not known (see checklist 32).
+- Kingdom: workers are named Wood, Herbs/flax, Fishing, Mining, Hardwood, Farming; the hardwood, herb/flax and
+  raw/cooked choices and the stored resource points (`MISC_RESTOTAL_LOWBITS`, 18 bits) are sent since 2026-11-15, read
+  from varbits whose meaning comes from the game's interface scripts and names, not yet checked in game. Whether the
+  kingdom vars change while away is not known (see checklist 32).
 - Tears of Guthix: only visits seen by this plugin count (visit time kept in the plugin's RS-profile config); the
   quest-point / XP requirement for the next visit is not modelled.
 - Loot history depends on RuneLite's Loot Tracker plugin: with it disabled nothing new is stored (the old records
@@ -365,7 +380,7 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
 1. In-game checks of the latest work (restart the developer client first): item 12 (collection log rework: summary
    at login, whole-log read with the Group Ironmen Tracker on, new items by chat and popup), item 9 (a kill with a
    kill count: the input for the server's drop luck), item 41 (page kill counts without opening pages, then item 40),
-   item 35 (loot history import; after a session played without
+   item 32 (kingdom: stored resources and choices against Advisor Ghrim), item 35 (loot history import; after a session played without
    this plugin, the server's Loot Today / 7 days shows it as approximate loot), item 28 (loadouts), then the rest of
    the unticked items.
 2. The owner rebuilds and restarts the server so it has drop luck, approximate loot and the merged collection log;
@@ -375,5 +390,5 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
 ## Left undone
 
 House location after teleport; learning the farming tick offset; essence pouches and the other items listed
-above; decoding the kingdom's herb/flax and hardwood choices; in-game check of everything in the checklist that is
+above; in-game check of the kingdom's stored resources and choices (checklist 32); in-game check of everything in the checklist that is
 not ticked, including the session-event and consent fixes.

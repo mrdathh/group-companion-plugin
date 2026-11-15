@@ -201,15 +201,29 @@ public class ProgressRulesTest
 	@Test
 	public void kingdomMapping()
 	{
-		KingdomData k = KingdomCollector.read(127, 750_000, 5, 0, 5, 0, 0, 0, true);
+		KingdomData k = KingdomCollector.read(127, 750_000, 5, 0, 5, 0, 0, 0, true, 4_572, 1, 1, 1);
 		assertEquals(100, k.getApproval());
 		assertEquals(750_000, k.getCoffer());
 		assertEquals(Integer.valueOf(5), k.getWorkers().get("Wood"));
 		assertEquals(Integer.valueOf(5), k.getWorkers().get("Fishing"));
 		assertEquals(6, k.getWorkers().size());
 		assertTrue(k.isRoyalTrouble());
-		assertEquals(25, KingdomCollector.read(32, 0, 0, 0, 0, 0, 0, 0, false).getApproval());
-		assertNull("vars not loaded", KingdomCollector.read(0, 0, 0, 0, 0, 0, 0, 0, false));
+		assertEquals(Integer.valueOf(127), k.getApprovalPoints());
+		assertEquals(Integer.valueOf(4_572), k.getResourcePoints());
+		assertEquals("teak", k.getHardwood());
+		assertEquals("flax", k.getHerbs());
+		assertEquals("cooked", k.getFish());
+		KingdomData low = KingdomCollector.read(32, 0, 0, 0, 0, 0, 0, 0, false, 0, 0, 0, 0);
+		assertEquals(25, low.getApproval());
+		assertEquals(Integer.valueOf(32), low.getApprovalPoints());
+		assertEquals(Integer.valueOf(0), low.getResourcePoints());
+		assertEquals("mahogany", low.getHardwood());
+		assertEquals("herbs", low.getHerbs());
+		assertEquals("raw", low.getFish());
+		assertEquals("both", KingdomCollector.read(64, 0, 0, 0, 0, 0, 0, 0, true, 0, 2, 0, 0).getHardwood());
+		// The store's 18 bits cannot exceed its maximum; clamped anyway (the server rejects more).
+		assertEquals(Integer.valueOf(262_143), KingdomCollector.read(64, 0, 0, 0, 0, 0, 0, 0, true, 300_000, 0, 0, 0).getResourcePoints());
+		assertNull("vars not loaded", KingdomCollector.read(0, 0, 0, 0, 0, 0, 0, 0, false, 0, 0, 0, 0));
 	}
 
 	// ------------------------------------------------------------------ Tears of Guthix
