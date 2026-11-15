@@ -1,4 +1,4 @@
-Protocol v1, plugin 0.1.0, snapshot of 2026-11-15 (updated for storages, deposit box, loadouts, diary tasks, CA tasks, slayer detail, kingdom, Tears of Guthix, loot history limits, collection log summary, name-only `clog_item` and loadout limits). The source of truth is the group-companion-server project's `docs/PROTOCOL.md` and `shared/protocol.ts`; this file is the plugin's half as built, and must be kept in step with them.
+Protocol v1, plugin 0.1.0, snapshot of 2026-11-15 (updated for storages, deposit box, loadouts, diary tasks, CA tasks, slayer detail, kingdom, Tears of Guthix, loot history limits, collection log summary, name-only `clog_item`, loadout limits, `status.activity` and `clog_page`). The source of truth is the group-companion-server project's `docs/PROTOCOL.md` and `shared/protocol.ts`; this file is the plugin's half as built, and must be kept in step with them.
 
 # Group Companion plugin → server protocol
 
@@ -45,7 +45,7 @@ One request in flight at a time; one account per request; at most 250 events per
 
 ## Queue
 
-- History events (`login`, `logout`, `loot`, `level_up`, `death`, `clog_item`, `bank_deposit`): kept in order, at most 500; the oldest is dropped.
+- History events (`login`, `logout`, `loot`, `level_up`, `death`, `clog_item`, `clog_page`, `bank_deposit`): kept in order, at most 500; the oldest is dropped.
 - State events: only the newest per state key (the event type, or `container:<name>`).
 - A snapshot whose `data` is identical to the last one the server accepted for that account and key is not sent. Exception: `status` is re-sent unchanged every 30 s.
 - `status` is never queued while the server is unreachable (during backoff or after a 401 it is dropped, and it is not retried).
@@ -64,6 +64,7 @@ Nothing is sent until a server URL and a token are set and the player has ticked
 | `level_up`, `death` | At once. |
 | `loot_history` | 10 s after login, then 2 s after the core Loot Tracker's stored records (`loottracker` RS-profile keys `drops_*`) change, at most once per 60 s; unchanged snapshots are not resent. Trimmed to the server's limits when over them (see below), never skipped. |
 | `clog_item` | On the next game tick after the game's chat line or its "Collection log" popup (whichever the game setting shows); when both arrive for the same item (within 50 ticks, popups can queue), one event. |
+| `clog_page` | On the game tick after the player opens a page of their own collection log (the game's `COLLECTION_DRAW_LIST` script ran), if that page's counts differ from what was sent for it since login. Never for an adventure log, while the log's search is on, or during the whole-log read; pages are never opened automatically. Under the "Collection log" setting. |
 | `skills` | 3 s after the last XP change, at most once per 10 s, at most ~10 s late while XP keeps changing. |
 | `container` inventory, equipment | 2 s after the last change (at most 15 s late while it keeps changing); also captured at login. |
 | `container` bank, seed_vault, looting_bag | Captured when the game sends the container (while open); sent 5 s after the last change, and at once when the bank or seed vault closes. |
@@ -100,6 +101,7 @@ Items (`Item`): `{ id, qty, name, ge, ha }`. `id` is canonical (un-noted; placeh
 - **`loot_history`** (state): `{ "sources": [ { type, name, kills, firstAt?, lastAt?, items: [Item] } ] }` — RuneLite core Loot Tracker's stored totals per source for the current profile (`ConfigLoot` JSON: type, name, kills, first/last epoch millis, drops = [id, qty, …]); canonical ids, current prices; all PLAYER sources merged into one source named "Player". Server limits (inclusive): at most 2,000 sources, 400 items per source, 50,000 items in all, names at most 200 characters (over any: 400 for the whole request). The plugin trims to fit, deterministically: names cut to 200; per source the 400 most valuable items (qty × `ge`, then highest qty, then lowest id); then the newest sources by `lastAt` (none = oldest; ties by name, then type) while within 2,000 sources, 50,000 items and 1,500,000 bytes of serialized `data`; kept sources stay sorted by type and name. One info log line says how many sources and items were left out. Left-out sources lose their history on the server (the snapshot replaces the previous one).
 - **`level_up`**: `{ "skill": "Woodcutting", "level": 70 }` (real level; never for the login burst).
 - **`death`**: `{ "killer"?: { "type": "NPC|PLAYER", "name"?, "id"? }, "location": { x, y, plane, regionId } }`. A player killer has no name or id; `killer` is omitted when unknown.
+- **`clog_page`**: `{ "tab": "Bosses|Raids|Clues|Minigames|Other", "page": "Royal Titans", "counts": [ { "label": "Royal Titans kills", "count": 158 } ] }` — the count lines at the top of a log page (header lines from index 2 that are exactly `label: number`, commas allowed; personal-best/time lines and duplicates skipped; never sent with no counts). `tab` from varbit `COLLECTION_LAST_TAB`; `page` from the cache (tab struct → page enum → page struct name, by varbit `COLLECTION_LAST_CATEGORY`), else the header title. The server keeps the newest count per (account, page, label); drop luck uses the highest of this, the Loot Tracker record and Chat Commands.
 - **`clog_item`**: `{ "name": "Pet snakeling", "id"? }`. `name` always; `id` only if the name was seen in recent loot or containers. Name-only events are normal: the server resolves the item from the name.
 - **`bank_deposit`**: `{ "items": [Item] }` — items put into the bank through a deposit box (the server adds them to the stored bank).
 

@@ -1,19 +1,25 @@
 package com.osrstracker;
 
 import com.osrstracker.model.ClogItemData;
+import com.osrstracker.model.ClogPageData;
 import com.osrstracker.model.CollectionLogData;
 import com.osrstracker.model.CollectionLogSummaryData;
 import com.osrstracker.model.EventType;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.api.EnumComposition;
 import net.runelite.api.GameState;
 import net.runelite.api.MenuAction;
 import net.runelite.api.ScriptEvent;
+import net.runelite.api.ScriptID;
+import net.runelite.api.StructComposition;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.ScriptPreFired;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.InterfaceID;
@@ -446,5 +452,135 @@ public class CollectionLogCollectorTest
 		scheduler.advance(10 * 60_000);
 		verify(session, never()).emit(eq(EventType.COLLECTION_LOG_SUMMARY), any());
 		assertEquals(0, scheduler.pendingTasks());
+	}
+	// ------------------------------------------------------------------ clog_page
+
+	private static List<ClogPageData.Count> counts(String... lines)
+	{
+		return CollectionLogCollector.parsePageCounts(Arrays.asList(lines));
+	}
+
+	@Test
+	public void pageHeaderCountsAreParsedStrictly()
+	{
+		assertEquals(Arrays.asList(new ClogPageData.Count("Royal Titans kills", 158)),
+			counts("Royal Titans", "Obtained: <col=ff0000>3/11</col>", "Royal Titans kills: <col=ffffff>158</col>"));
+		// Commas, several labels (Dagannoth Kings), a personal best time and garbage lines.
+		assertEquals(Arrays.asList(new ClogPageData.Count("Dagannoth Rex kills", 1234),
+				new ClogPageData.Count("Dagannoth Prime kills", 56), new ClogPageData.Count("Dagannoth Supreme kills", 7)),
+			counts("Dagannoth Kings", "Obtained: 5/9", "Dagannoth Rex kills: 1,234", "Dagannoth Prime kills: 56",
+				"Personal best: 1:23.40", "Fastest time: 99", "Dagannoth Supreme kills: 7", "just text", ": 5",
+				"Dagannoth Rex kills: 9", null, "Huge: 99999999999"));
+		// Title and "Obtained" lines are never counts; a page without count lines gives none.
+		assertTrue(counts("Kills: 5", "Obtained: 5").isEmpty());
+		assertTrue(counts("Miscellaneous", "Obtained: 100/300").isEmpty());
+	}
+
+	private Widget[] header(String... lines)
+	{
+		Widget[] out = new Widget[lines.length];
+		for (int i = 0; i < lines.length; i++)
+		{
+			out[i] = mock(Widget.class);
+			when(out[i].getText()).thenReturn(lines[i]);
+		}
+		Widget parent = mock(Widget.class);
+		when(parent.getChildren()).thenReturn(out);
+		when(client.getWidget(InterfaceID.Collection.HEADER_TEXT)).thenReturn(parent);
+		return out;
+	}
+
+	/** Bosses tab (struct 471) -> page enum 9000 -> page structs 5000, 5001 ("Royal Titans"). */
+	private void cachePages()
+	{
+		StructComposition tab = mock(StructComposition.class);
+		when(tab.getIntValue(CollectionLogCollector.TAB_PAGES_ENUM_PARAM)).thenReturn(9000);
+		when(client.getStructComposition(471)).thenReturn(tab);
+		EnumComposition pages = mock(EnumComposition.class);
+		when(pages.getIntVals()).thenReturn(new int[]{5000, 5001});
+		when(client.getEnum(9000)).thenReturn(pages);
+		StructComposition titans = mock(StructComposition.class);
+		when(titans.getStringValue(CollectionLogCollector.PAGE_NAME_PARAM)).thenReturn("Royal Titans");
+		when(client.getStructComposition(5001)).thenReturn(titans);
+		when(client.getVarbitValue(VarbitID.COLLECTION_LAST_TAB)).thenReturn(0);
+		when(client.getVarbitValue(VarbitID.COLLECTION_LAST_CATEGORY)).thenReturn(1);
+	}
+
+	private void pageDrawnThenTick()
+	{
+		collector.onScriptPostFired(new ScriptPostFired(ScriptID.COLLECTION_DRAW_LIST));
+		nextTick();
+	}
+
+	@Test
+	public void anOpenedPageIsSentOnTheNextTickAndOnlyWhenItsCountsChange()
+	{
+		cachePages();
+		header("<col=ff981f>Royal Titans</col>", "Obtained: 3/11", "Royal Titans kills: 158");
+		collector.onScriptPostFired(new ScriptPostFired(ScriptID.COLLECTION_DRAW_LIST));
+		verify(session, never()).emit(eq(EventType.CLOG_PAGE), any());
+		nextTick();
+		ClogPageData d = (ClogPageData) emitted(EventType.CLOG_PAGE, 1).get(0);
+		assertEquals("Bosses", d.getTab());
+		assertEquals("Royal Titans", d.getPage());
+		assertEquals(Arrays.asList(new ClogPageData.Count("Royal Titans kills", 158)), d.getCounts());
+
+		pageDrawnThenTick(); // same page again, same counts
+		nextTick();          // no draw: nothing read
+		emitted(EventType.CLOG_PAGE, 1);
+
+		header("Royal Titans", "Obtained: 3/11", "Royal Titans kills: 159");
+		pageDrawnThenTick();
+		assertEquals(159, ((ClogPageData) emitted(EventType.CLOG_PAGE, 2).get(1)).getCounts().get(0).getCount());
+
+		// A new session sends the page again on the next open.
+		collector.onSessionStart();
+		pageDrawnThenTick();
+		emitted(EventType.CLOG_PAGE, 3);
+	}
+
+	@Test
+	public void thePageNameFallsBackToTheHeaderTitle()
+	{
+		when(client.getVarbitValue(VarbitID.COLLECTION_LAST_TAB)).thenReturn(1);
+		when(client.getVarbitValue(VarbitID.COLLECTION_LAST_CATEGORY)).thenReturn(0);
+		header("<col=ff981f>Chambers of Xeric</col>", "Obtained: 10/26", "Chambers of Xeric completions: 42",
+			"Chambers of Xeric (CM) completions: 3");
+		pageDrawnThenTick();
+		ClogPageData d = (ClogPageData) emitted(EventType.CLOG_PAGE, 1).get(0);
+		assertEquals("Raids", d.getTab());
+		assertEquals("Chambers of Xeric", d.getPage());
+		assertEquals(2, d.getCounts().size());
+		assertNull(collector.pageName(1, 0));
+	}
+
+	@Test
+	public void pageNameFromTheCache()
+	{
+		cachePages();
+		assertEquals("Royal Titans", collector.pageName(0, 1));
+		assertNull(collector.pageName(0, 2));  // past the end of the page enum
+		assertNull(collector.pageName(0, -1));
+	}
+
+	@Test
+	public void noPageCountsFromAnAdventureLogTheSearchOrTheWholeLogRead()
+	{
+		cachePages();
+		header("Royal Titans", "Obtained: 3/11", "Royal Titans kills: 158");
+
+		when(client.getVarbitValue(VarbitID.COLLECTION_POH_HOST_BOOK_OPEN)).thenReturn(1);
+		pageDrawnThenTick();
+		when(client.getVarbitValue(VarbitID.COLLECTION_POH_HOST_BOOK_OPEN)).thenReturn(0);
+
+		when(client.getVarbitValue(VarbitID.FLOATER_IS_SEARCHING)).thenReturn(1);
+		pageDrawnThenTick();
+		when(client.getVarbitValue(VarbitID.FLOATER_IS_SEARCHING)).thenReturn(0);
+
+		open(); // our whole-log read starts
+		collector.onScriptPostFired(new ScriptPostFired(ScriptID.COLLECTION_DRAW_LIST));
+		draw(1, 1);
+		nextTick();
+		verify(session, never()).emit(eq(EventType.CLOG_PAGE), any());
 	}
 }

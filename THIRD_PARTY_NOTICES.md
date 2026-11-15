@@ -28,12 +28,22 @@ Copyright (c) 2022, Christopher Brown.
 - `src/main/java/com/osrstracker/LocationReader.java`: resolving the player's position through the boat's
   world entity (GroupIronmenTrackerPlugin).
 - `src/main/java/com/osrstracker/CollectionLogCollector.java`: opening the collection log's search when the
-  player's own log opens, the house adventure log check and the 500-tick limit (CollectionLogWidgetSubscriber).
+  player's own log opens, the house adventure log check and the 500-tick limit (CollectionLogWidgetSubscriber);
+  `clog_page`: reading the page header's count lines from child index 2, and the page name from the cache via the
+  tab/page varbits 6905/6906, tab structs 471-475, param 683 (page enum) and 689 (page name) (CollectionLogManager,
+  last at commit a5c1cf93c0, since removed).
 - `src/main/java/com/osrstracker/StorageCollector.java`: rune pouch varbits and enum (RunePouchState), Dizana's
   quiver varps (QuiverState), potion storage enums and dose script with its var-transmit trigger
   (PotionStorageState and GroupIronmenTrackerPlugin), group storage committed on "Saving..." (DataState transactions).
 - `src/main/java/com/osrstracker/DepositCollector.java`: deposit-box detection by deposit clicks / chatbox entry and
   a two-tick window, removed items by diff (GroupIronmenTrackerPlugin, ItemContainerState#whatGotRemoved).
+
+## Collection Log Luck (https://github.com/peanubnutter/collection-log-luck)
+
+Copyright (c) 2020, Evan Sloan; Copyright (c) 2023, github.com/peanubnutter.
+
+- `src/main/java/com/osrstracker/CollectionLogCollector.java`: reading a page's kill counts after the game's
+  `COLLECTION_DRAW_LIST` script, as "label: number" lines of the header (own code).
 
 ## Mystix (https://github.com/rjmccaskell/mystix-plugin)
 

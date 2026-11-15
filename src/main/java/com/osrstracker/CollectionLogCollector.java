@@ -2,6 +2,7 @@ package com.osrstracker;
 
 import com.google.common.collect.ImmutableSet;
 import com.osrstracker.model.ClogItemData;
+import com.osrstracker.model.ClogPageData;
 import com.osrstracker.model.CollectionLogData;
 import com.osrstracker.model.CollectionLogSummaryData;
 import com.osrstracker.model.EventType;
@@ -9,6 +10,7 @@ import com.osrstracker.model.IngestEvent;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -29,10 +31,12 @@ import net.runelite.api.Client;
 import net.runelite.api.EnumComposition;
 import net.runelite.api.GameState;
 import net.runelite.api.MenuAction;
+import net.runelite.api.ScriptID;
 import net.runelite.api.StructComposition;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.ScriptPreFired;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.InterfaceID;
@@ -63,6 +67,15 @@ import net.runelite.client.util.Text;
  * christoabrown/group-ironmen-tracker, BSD-2-Clause, CollectionLogWidgetSubscriber), so it never toggles the
  * search off. Never for a house adventure log (someone else's log). The first read of a session is not limited;
  * after a successful read, at most one per 500 game ticks (reset on logout).</li>
+ * <li>{@code clog_page}: the counts at the top of a log page the player opened themselves (e.g. "Royal Titans kills:
+ * 158"). The game draws a page's item list with script {@code COLLECTION_DRAW_LIST} (2731); on the next tick the header
+ * lines from index 2 on are read and parsed as "label: number" (as collection-log-luck, peanubnutter/collection-log-luck,
+ * BSD-2-Clause, and the Group Ironmen Tracker's former CollectionLogManager do). Tab and page name come from the cache:
+ * tab index varbit {@code COLLECTION_LAST_TAB} (6905), page index {@code COLLECTION_LAST_CATEGORY} (6906), the tab's
+ * struct (471-475) param 683 = enum of page structs, page struct param 689 = name (that CollectionLogManager's
+ * technique), with the header title as fallback. Only the player's own log, never while the search is on or this
+ * plugin's whole-log read runs, and only when a page's counts differ from what was sent for it this session. Pages
+ * are never opened automatically.</li>
  * </ul>
  */
 @Slf4j
@@ -97,6 +110,21 @@ public class CollectionLogCollector implements SessionTracker.Listener
 
 	/** Tab names with their obtained / max varps, in the order of the game's vars. */
 	static final String[] TAB_NAMES = {"Bosses", "Raids", "Clues", "Minigames", "Other"};
+	/** Cache structs of the five tabs, in tab-index order (Group Ironmen Tracker's former CollectionLogManager). */
+	static final int[] TAB_STRUCTS = {471, 472, 473, 474, 475};
+	static final int TAB_PAGES_ENUM_PARAM = 683;
+	static final int PAGE_NAME_PARAM = 689;
+	/** A header count line: "Royal Titans kills: 158", "Dagannoth Rex kills: 1,234". */
+	static final Pattern PAGE_COUNT = Pattern.compile("^(.+?): ([\\d,]+)$");
+	/**
+	 * Boss kill-count player vars, logged once per login as a diagnostic only (nothing is sent): if they hold the
+	 * real kill counts, a later version could send kill counts without the player opening pages.
+	 */
+	private static final int[] DIAGNOSTIC_KILL_VARPS = {VarPlayerID.TOTAL_HUEY_KILLS, VarPlayerID.TOTAL_ROYAL_TITAN_KILLS,
+		VarPlayerID.TOTAL_VORKATH_KILLS, VarPlayerID.TOTAL_SNAKEBOSS_KILLS, VarPlayerID.TOTAL_BANDOS_KILLS,
+		VarPlayerID.TOTAL_JAD_KILLS};
+	private static final String[] DIAGNOSTIC_KILL_NAMES = {"TOTAL_HUEY_KILLS", "TOTAL_ROYAL_TITAN_KILLS",
+		"TOTAL_VORKATH_KILLS", "TOTAL_SNAKEBOSS_KILLS", "TOTAL_BANDOS_KILLS", "TOTAL_JAD_KILLS"};
 	private static final int[][] TAB_VARPS = {
 		{VarPlayerID.COLLECTION_COUNT_BOSSES, VarPlayerID.COLLECTION_COUNT_BOSSES_MAX},
 		{VarPlayerID.COLLECTION_COUNT_RAIDS, VarPlayerID.COLLECTION_COUNT_RAIDS_MAX},
@@ -153,6 +181,12 @@ public class CollectionLogCollector implements SessionTracker.Listener
 	/** Tick of the last successful read this session; -1 = none yet (the first read is not limited). */
 	private int lastReadTick = -1;
 	private final Map<Integer, Integer> readItems = new TreeMap<>();
+
+	// page counts (client thread only)
+	private boolean pageDrawn;
+	/** "tab|page" -> counts last sent this session. */
+	private final Map<String, List<ClogPageData.Count>> sentPages = new HashMap<>();
+	private boolean killVarpsLogged;
 
 	// new items
 	private boolean popupStarted;
@@ -295,6 +329,7 @@ public class CollectionLogCollector implements SessionTracker.Listener
 			return;
 		}
 		summaryRetries = 0;
+		logKillVarpsOnce(); // player vars are loaded by now (the log counts are)
 		session.emit(EventType.COLLECTION_LOG_SUMMARY, data);
 	}
 
@@ -364,6 +399,139 @@ public class CollectionLogCollector implements SessionTracker.Listener
 		}
 	}
 
+	// ------------------------------------------------------------------ clog_page
+
+	/** Client thread, the tick after a page's list was drawn: send its header counts if they changed. */
+	void readPage()
+	{
+		if (!config.sendCollectionLog() || !session.isActive())
+		{
+			return;
+		}
+		if (isAdventureLog() || reading || isSearchOn())
+		{
+			log.debug("Collection log page not read: {}", isAdventureLog() ? "an adventure log is open"
+				: reading ? "the whole-log read is running" : "the search is on");
+			return;
+		}
+		Widget header = client.getWidget(InterfaceID.Collection.HEADER_TEXT);
+		Widget[] lines = header == null || header.isHidden() ? null : header.getChildren();
+		if (lines == null || lines.length < 3)
+		{
+			return;
+		}
+		List<String> texts = new ArrayList<>();
+		for (Widget w : lines)
+		{
+			texts.add(w == null ? null : w.getText());
+		}
+		List<ClogPageData.Count> counts = parsePageCounts(texts);
+		if (counts.isEmpty())
+		{
+			return;
+		}
+		int tab = client.getVarbitValue(VarbitID.COLLECTION_LAST_TAB);
+		if (tab < 0 || tab >= TAB_NAMES.length)
+		{
+			log.debug("Collection log page not read: unknown tab {}", tab);
+			return;
+		}
+		String page = pageName(tab, client.getVarbitValue(VarbitID.COLLECTION_LAST_CATEGORY));
+		if (page == null)
+		{
+			page = texts.get(0) == null ? "" : Text.removeTags(texts.get(0)).trim();
+		}
+		if (page.isEmpty())
+		{
+			return;
+		}
+		String key = TAB_NAMES[tab] + "|" + page;
+		if (counts.equals(sentPages.get(key)))
+		{
+			return;
+		}
+		sentPages.put(key, counts);
+		session.emit(EventType.CLOG_PAGE, new ClogPageData(TAB_NAMES[tab], page, counts));
+	}
+
+	/**
+	 * Header lines of a page: index 0 is the title, 1 "Obtained: X/Y", then count lines. Keeps lines that are
+	 * exactly "label: number" (commas allowed); skips anything else (e.g. a personal best time) and duplicates.
+	 */
+	static List<ClogPageData.Count> parsePageCounts(List<String> lines)
+	{
+		List<ClogPageData.Count> out = new ArrayList<>();
+		Set<String> labels = new HashSet<>();
+		for (int i = 2; i < lines.size(); i++)
+		{
+			String raw = lines.get(i);
+			if (raw == null)
+			{
+				continue;
+			}
+			Matcher m = PAGE_COUNT.matcher(Text.removeTags(raw).trim());
+			if (!m.matches())
+			{
+				continue;
+			}
+			String label = m.group(1).trim();
+			String lower = label.toLowerCase(Locale.ROOT);
+			if (label.isEmpty() || lower.contains("best") || lower.contains("time") || !labels.add(label))
+			{
+				continue;
+			}
+			try
+			{
+				out.add(new ClogPageData.Count(label, Integer.parseInt(m.group(2).replace(",", ""))));
+			}
+			catch (NumberFormatException e)
+			{
+				// too large: not a count
+			}
+		}
+		return out.isEmpty() ? Collections.emptyList() : out;
+	}
+
+	/** Page name from the cache (tab struct -> page enum -> page struct name); null if the lookup fails. */
+	String pageName(int tab, int page)
+	{
+		try
+		{
+			StructComposition tabStruct = client.getStructComposition(TAB_STRUCTS[tab]);
+			EnumComposition pages = tabStruct == null ? null : client.getEnum(tabStruct.getIntValue(TAB_PAGES_ENUM_PARAM));
+			int[] structs = pages == null ? null : pages.getIntVals();
+			if (structs == null || page < 0 || page >= structs.length)
+			{
+				return null;
+			}
+			StructComposition pageStruct = client.getStructComposition(structs[page]);
+			String name = pageStruct == null ? null : pageStruct.getStringValue(PAGE_NAME_PARAM);
+			return name == null || name.trim().isEmpty() ? null : Text.removeTags(name).trim();
+		}
+		catch (RuntimeException e)
+		{
+			log.debug("Collection log page name lookup failed (tab {}, page {})", tab, page, e);
+			return null;
+		}
+	}
+
+	/** Once per login, info level, nothing sent: the boss kill-count varps, for the owner to compare in game. */
+	void logKillVarpsOnce()
+	{
+		if (killVarpsLogged)
+		{
+			return;
+		}
+		killVarpsLogged = true;
+		StringBuilder b = new StringBuilder();
+		for (int i = 0; i < DIAGNOSTIC_KILL_VARPS.length; i++)
+		{
+			b.append(i == 0 ? "" : ", ").append(DIAGNOSTIC_KILL_NAMES[i]).append('=')
+				.append(client.getVarpValue(DIAGNOSTIC_KILL_VARPS[i]));
+		}
+		log.info("Group Companion diagnostic (not sent): kill-count varps {}", b);
+	}
+
 	// ------------------------------------------------------------------ full log
 
 	@Subscribe
@@ -385,6 +553,15 @@ public class CollectionLogCollector implements SessionTracker.Listener
 				break;
 			default:
 				break;
+		}
+	}
+
+	@Subscribe
+	public void onScriptPostFired(ScriptPostFired event)
+	{
+		if (event.getScriptId() == ScriptID.COLLECTION_DRAW_LIST)
+		{
+			pageDrawn = true; // read on the next tick, once the header is drawn
 		}
 	}
 
@@ -528,6 +705,11 @@ public class CollectionLogCollector implements SessionTracker.Listener
 	public void onGameTick(GameTick tick)
 	{
 		emitNewItems();
+		if (pageDrawn)
+		{
+			pageDrawn = false;
+			readPage();
+		}
 
 		if (!reading)
 		{
@@ -637,6 +819,8 @@ public class CollectionLogCollector implements SessionTracker.Listener
 
 	private void resetRateLimit()
 	{
+		killVarpsLogged = false;
+		pageDrawn = false;
 		reading = false;
 		lastReadTick = -1;
 		lastDrawTick = -1;
@@ -659,6 +843,7 @@ public class CollectionLogCollector implements SessionTracker.Listener
 	@Override
 	public void onSessionStart()
 	{
+		sentPages.clear();
 		summaryRetries = 0;
 		summary.triggerIn(SUMMARY_LOGIN_SETTLE_MS);
 	}

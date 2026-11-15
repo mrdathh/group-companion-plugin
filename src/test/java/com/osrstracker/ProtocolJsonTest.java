@@ -7,6 +7,7 @@ import com.osrstracker.model.AccountRef;
 import com.osrstracker.model.ActivityData;
 import com.osrstracker.model.ClientInfo;
 import com.osrstracker.model.ClogItemData;
+import com.osrstracker.model.ClogPageData;
 import com.osrstracker.model.CollectionLogData;
 import com.osrstracker.model.CollectionLogSummaryData;
 import com.osrstracker.model.ContainerData;
@@ -39,6 +40,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import net.runelite.http.api.RuneLiteAPI;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
@@ -188,6 +190,20 @@ public class ProtocolJsonTest
 			event(EventType.CLOG_ITEM, new ClogItemData("Pet snakeling", 12921)));
 		assertJson(envelope("clog_item", "{\"name\":\"Pet snakeling\"}"),
 			event(EventType.CLOG_ITEM, new ClogItemData("Pet snakeling", null)));
+	}
+
+	@Test
+	public void clogPage()
+	{
+		assertJson(envelope("clog_page", "{\"tab\":\"Bosses\",\"page\":\"Royal Titans\","
+			+ "\"counts\":[{\"label\":\"Royal Titans kills\",\"count\":158}]}"),
+			event(EventType.CLOG_PAGE, new ClogPageData("Bosses", "Royal Titans",
+				Arrays.asList(new ClogPageData.Count("Royal Titans kills", 158)))));
+		assertJson(envelope("clog_page", "{\"tab\":\"Bosses\",\"page\":\"Dagannoth Kings\",\"counts\":["
+			+ "{\"label\":\"Dagannoth Rex kills\",\"count\":1234},{\"label\":\"Dagannoth Prime kills\",\"count\":56}]}"),
+			event(EventType.CLOG_PAGE, new ClogPageData("Bosses", "Dagannoth Kings", Arrays.asList(
+				new ClogPageData.Count("Dagannoth Rex kills", 1234), new ClogPageData.Count("Dagannoth Prime kills", 56)))));
+		assertNull(EventType.stateKey(event(EventType.CLOG_PAGE, new ClogPageData("Bosses", "x", Arrays.asList()))));
 	}
 
 	@Test

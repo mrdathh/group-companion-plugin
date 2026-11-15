@@ -9,6 +9,8 @@ public enum EventType
 	LEVEL_UP("level_up", false),
 	DEATH("death", false),
 	CLOG_ITEM("clog_item", false),
+	/** One per opened log page whose counts changed; history, so several pages opened quickly all arrive. */
+	CLOG_PAGE("clog_page", false),
 	BANK_DEPOSIT("bank_deposit", false),
 	SKILLS("skills", true),
 	CONTAINER("container", true),

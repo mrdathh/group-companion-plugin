@@ -54,7 +54,7 @@
   login link `<server origin>/#token=<token>`) and shows whether URL, token and consent are set. It reads nothing from
   the server, shows no goals, never displays or logs the token, and can be hidden ("Show side panel"). It does not
   change the pure-sender rule.
-- `./gradlew --no-daemon clean build` passes on JDK 11: 216 unit tests, 0 failures, no javac warnings.
+- `./gradlew --no-daemon clean build` passes on JDK 11: 222 unit tests, 0 failures, no javac warnings.
 - **Server side (group-companion-server main, 2026-11-15):** drop luck, approximate loot and the merged collection log
   are on the server's main; no further plugin change is needed for them. Drop luck uses the `loot` events'
   `source.id`, `source.combatLevel` and `killCount`; approximate loot (loot played without this plugin) comes from
@@ -77,6 +77,8 @@
   Gauntlet / Corrupted Gauntlet / Fortis Colosseum kill counts attach to their loot.
 - **Restart the developer client to pick up the latest work.** After the rename the plugin shows up as "Group
   Companion" (settings carry over: same config group). Built and unit-tested but never run in the game:
+  the collection log page kill counts (`clog_page`, 2026-11-15, checklist item 40) and the kill-count varp
+  diagnostic line (item 41),
   the activity signals in `status.activity` for the app's idle alerts (input idle / logout estimate, combat end,
   action idle; 2026-11-15, checklist items 37-39),
   the Group Companion side panel (copy token / copy app login link, 2026-11-15), the loot history import (`loot_history`, now trimmed to the server's limits and sent in a request of its own) and
@@ -251,6 +253,20 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     null through the short pauses between actions. Stop: about 3 s later it is set (to the moment you stopped);
     walking a tile clears it. Note any skill where it flickers while still working (a gap of 3 s or more without an
     animation, movement or target).
+40. [ ] **Collection log page kill counts.** Open your collection log, then open a few boss pages (e.g. Royal
+    Titans, Dagannoth Kings with its three counts, a raid). One tick after each page shows, one `clog_page` with the
+    tab, the page name and the header's counts; opening the same page again sends nothing until a count changes.
+    Check the kill counts in the app's luck view (the highest of the log page, the Loot Tracker and Chat Commands).
+    The page shown when the log first opens is skipped if the whole-log read runs then; click it again. Also check:
+    clicking a page while the log's search is on (after the whole-log read) still sends it, i.e. the game turns the
+    search off when a page is chosen; if not, close and reopen the log. Nothing from a house adventure log. Debug lines
+    "Collection log page not read: ..." name the reason. Look at `CollectionLogCollector.readPage`.
+41. [ ] **Kill-count varp diagnostic (nothing sent).** A few seconds after login the client log has one info line
+    "Group Companion diagnostic (not sent): kill-count varps TOTAL_HUEY_KILLS=…, TOTAL_ROYAL_TITAN_KILLS=…,
+    TOTAL_VORKATH_KILLS=…, TOTAL_SNAKEBOSS_KILLS=… (Zulrah), TOTAL_BANDOS_KILLS=…, TOTAL_JAD_KILLS=…". Compare
+    with your real kill counts (e.g. `!kc` or the log pages): if they match for bosses you have killed, a later
+    version could send kill counts without opening pages; if they are 0, those varps are not sent to the client.
+    (Only logged with the Collection log setting on.)
 
 Also check: the plugin's Data toggles stop each group; turning one back on resends that group's snapshots.
 
