@@ -155,7 +155,20 @@ public class TrackerSyncPlugin extends Plugin
 		serverConfigChange = new Throttle(executor, time, CONFIG_SETTLE_MS, 0, 5 * CONFIG_SETTLE_MS,
 			() -> clientThread.invoke(this::onServerConfigSettled));
 		applyServerConfig();
-		sender.start(this::onUnauthorized);
+		sender.start(new EventSender.Listener()
+		{
+			@Override
+			public void onUnauthorized()
+			{
+				TrackerSyncPlugin.this.onUnauthorized();
+			}
+
+			@Override
+			public void onJoinRefused()
+			{
+				TrackerSyncPlugin.this.onJoinRefused();
+			}
+		});
 
 		// Side panel: only the plugin's own settings (copy token / login link); nothing from the server.
 		panel = new TrackerSyncPanel(config);
@@ -286,7 +299,8 @@ public class TrackerSyncPlugin extends Plugin
 		{
 			TrackerSyncPanel.onEdt(p::refresh);
 		}
-		if ("serverUrl".equals(key) || "token".equals(key) || TrackerSyncConfig.CONSENT_KEY.equals(key))
+		if ("serverUrl".equals(key) || TrackerSyncConfig.TOKEN_KEY.equals(key) || TrackerSyncConfig.CONSENT_KEY.equals(key)
+			|| TrackerSyncConfig.JOIN_CODE_KEY.equals(key))
 		{
 			if (serverConfigChange != null)
 			{
@@ -347,13 +361,21 @@ public class TrackerSyncPlugin extends Plugin
 	}
 
 	/**
-	 * Apply URL, token and consent to the sender. Consent is bound to the URL's host: a different host
-	 * unticks the consent box so the player is asked again (see {@link Consent}).
+	 * Apply URL, token, join code and consent to the sender. Consent is bound to the URL's host: a different host
+	 * unticks the consent box so the player is asked again (see {@link Consent}). With a join code and no token, the
+	 * player's own token is made here and saved in the Token field once (see {@link JoinToken}).
 	 *
 	 * @return true if the effective destination changed
 	 */
 	boolean applyServerConfig()
 	{
+		String token = config.token();
+		if (JoinToken.needed(token, config.joinCode()))
+		{
+			token = JoinToken.generate();
+			configManager.setConfiguration(TrackerSyncConfig.GROUP, TrackerSyncConfig.TOKEN_KEY, token);
+			log.info("Group Companion: made a personal token for joining with the join code");
+		}
 		String storedHost = configManager.getConfiguration(TrackerSyncConfig.GROUP, TrackerSyncConfig.CONSENT_HOST_KEY);
 		Consent.Decision d = Consent.decide(config.serverUrl(), config.consent(), storedHost);
 		if (!d.getBoundHost().equals(storedHost == null ? "" : storedHost))
@@ -371,7 +393,7 @@ public class TrackerSyncPlugin extends Plugin
 		{
 			configManager.setConfiguration(TrackerSyncConfig.GROUP, TrackerSyncConfig.CONSENT_KEY, d.isChecked());
 		}
-		return sender.configure(config.serverUrl(), config.token(), clientId(), d.isGranted());
+		return sender.configure(config.serverUrl(), token, clientId(), d.isGranted(), config.joinCode());
 	}
 
 	/** Random id generated once per RuneLite install (stored in the RuneLite config). */
@@ -388,9 +410,22 @@ public class TrackerSyncPlugin extends Plugin
 
 	private void onUnauthorized()
 	{
+		boolean joining = JoinToken.headerValue(config.joinCode()) != null;
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.GAMEMESSAGE)
-			.runeLiteFormattedMessage("Group Companion: your server rejected the token. Nothing is sent until you fix the token in the plugin settings.")
+			.runeLiteFormattedMessage(joining
+				? "Group Companion: your server rejected the token or the join code. Nothing is sent until you fix them in"
+					+ " the plugin settings."
+				: "Group Companion: your server rejected the token. Nothing is sent until you fix the token in the plugin settings.")
+			.build());
+	}
+
+	private void onJoinRefused()
+	{
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.runeLiteFormattedMessage("Group Companion: your server is not taking new members right now. Nothing is sent;"
+				+ " ask the server's owner.")
 			.build());
 	}
 

@@ -9,7 +9,7 @@ Formerly called "Tracker Sync"; settings saved under the old name carry over unc
 ## Before anything is sent
 
 - Nothing is sent until you enter a **Server URL** and a **Token** (printed by your server when your user
-  is created) **and** tick **Allow sending to this server**. Ticking it shows RuneLite's standard notice
+  is created, or made by the plugin when you join with a join code, see below) **and** tick **Allow sending to this server**. Ticking it shows RuneLite's standard notice
   that your IP address goes to a server not controlled or verified by RuneLite developers; you are asked
   once. The answer is remembered (also across client restarts) for that server's host: retyping or
   re-pasting the token or reopening the settings does not ask again. Changing the Server URL to a
@@ -55,12 +55,18 @@ in-game collection log chat notification setting.
 Configuration (wrench icon) > search "Group Companion":
 
 - **Server**: Server URL (default `http://127.0.0.1:8787`; use `https://` for anything not on this PC), Token,
-  Allow sending to this server (off until you tick it), Show side panel.
+  Join code, Allow sending to this server (off until you tick it), Show side panel.
+
+**Joining a friend's server:** enter the Server URL and the **Join code** the server's owner shared, leave **Token**
+empty and tick "Allow sending". The plugin makes your own token, fills it into the Token field and sends the join code
+with your data; the server then adds you as a new member, named after your character. Your characters are yours in the
+app. Keep the token: to play on another PC too, copy it there (side panel: Copy token); a new token would make you a
+second member.
 - **Data to send**: Loot, Skills, Items, Quests and diaries, Collection log, Live status and location,
   Timers, Slayer kill counts and combat achievements, Storages and loadouts.
 
 **Side panel:** the Group Companion icon in the RuneLite sidebar opens a small panel with two buttons, **Copy token**
-(to paste into the app's login) and **Copy app login link** (`https://<your server>/#token=…`, opens the app signed
+(to paste into the app's login, or into the plugin on another PC) and **Copy app login link** (`https://<your server>/#token=…`, opens the app signed
 in on another device), plus a line showing whether the URL, the token and "Allow sending" are set. The token is never
 shown. It only uses the plugin's own settings; hide it with "Show side panel".
 

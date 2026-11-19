@@ -1,4 +1,4 @@
-Protocol v1, plugin 0.1.0, snapshot of 2026-11-15 (updated for storages, deposit box, loadouts, diary tasks, CA tasks, slayer detail, kingdom, Tears of Guthix, loot history limits, collection log summary, name-only `clog_item`, loadout limits, `status.activity`, `clog_page` and the kingdom's stored resources and choices). The source of truth is the group-companion-server project's `docs/PROTOCOL.md` and `shared/protocol.ts`; this file is the plugin's half as built, and must be kept in step with them.
+Protocol v1, plugin 0.1.0, snapshot of 2026-11-15 (updated for storages, deposit box, loadouts, diary tasks, CA tasks, slayer detail, kingdom, Tears of Guthix, loot history limits, collection log summary, name-only `clog_item`, loadout limits, `status.activity`, `clog_page`, the kingdom's stored resources and choices, and joining with a join code, 2026-11-19). The source of truth is the group-companion-server project's `docs/PROTOCOL.md` and `shared/protocol.ts`; this file is the plugin's half as built, and must be kept in step with them.
 
 # Group Companion plugin → server protocol
 
@@ -9,7 +9,11 @@ It never opens a port and never receives requests.
 
 `POST <server URL>/api/ingest` (a path in the server URL is kept: `https://host/relay` → `https://host/relay/api/ingest`).
 
-Headers: `Authorization: Bearer <token>`, `X-Plugin-Version: 0.1.0`, `Content-Type: application/json` (no charset parameter).
+Headers: `Authorization: Bearer <token>`, `X-Plugin-Version: 0.1.0`, `Content-Type: application/json` (no charset parameter), and `X-Join-Code: <code>` (trimmed) on every request while the "Join code" setting is not empty.
+
+### Joining with a join code
+
+The server's owner can set one join code (server CLI `join-code`). With an empty **Token** and a **Join code**, the plugin makes the player's personal token itself when the settings are applied (at start-up and 2 s after the last settings edit): `osrs_` + 32 bytes from `java.security.SecureRandom`, base64url without padding (43 characters, the server's token format), and saves it in the Token field once; from then on it is an ordinary token and is never made again while the field has a value. The server creates the player's user for an unknown token sent with the right `X-Join-Code` (named after the character) and processes the request normally; later requests with that token are signed in by the token alone and the server ignores the header. The plugin sends the header whenever the join code field is set (decided 2026-11-19: simpler than tracking acceptance, harmless because a known token ignores it, and a plugin can join again if the server's database was ever reset); it is never sent anywhere but the configured URL and never logged. Changing the join code is not a new destination (no new `login`, snapshots are not resent) but lifts a stop after a 401 or 403. The side panel's "Copy token" and "Copy app login link" use the generated token, so the player signs in to the app as themself; to use another PC they copy the token into the plugin there (a new token would be a new user on the server).
 
 ```jsonc
 {
@@ -37,8 +41,9 @@ Optional fields are omitted when unknown. Fields typed `X | null` in the contrac
 | Status | Plugin reaction |
 | --- | --- |
 | 2xx | Drop the events; remember state snapshots as sent. |
-| 400, 413, any other 4xx except below | Drop the events (the whole batch), log once with the event types and the server's error text. |
-| 401 | Stop sending (also heartbeats) until the URL or token changes; warn once in chat. Queued history events are kept (cap 500). |
+| 400, 413, any other 4xx except below (401, 403) | Drop the events (the whole batch), log once with the event types and the server's error text. |
+| 401 | Unknown token; when joining: wrong join code, joining off, or a revoked token. Stop sending (also heartbeats) until the URL, token or join code changes; warn once in chat (naming the join code when one is set). Queued history events are kept (cap 500). |
+| 403 | Joining refused: the server takes no new members (its user cap). Same as 401, with its own chat message. |
 | 5xx, 408, 429, network error, 15 s call timeout | Keep and retry with backoff 5, 10, 20, 40, 60, 60 … s. |
 
 One request in flight at a time; one account per request; at most 250 events per request (the rest follows at once). `loot_history` always travels in a request of its own (no other events): when it is the oldest pending event it is sent alone, otherwise the other events go first as one batch and it follows in the next request; the final flush at shutdown sends the other events (an unsent `loot_history` is sent again next session). The server limits bodies to 2 MiB (2,097,152 bytes; 413).
@@ -54,7 +59,7 @@ One request in flight at a time; one account per request; at most 250 events per
 
 ## When things are sent
 
-Nothing is sent until a server URL and a token are set and the player has ticked "Allow sending to this server" (consent, remembered per URL host; a different host withdraws it), and nothing on worlds of type SEASONAL, DEADMAN, FRESH_START_WORLD, TOURNAMENT_WORLD, BETA_WORLD, NOSAVE_MODE, QUEST_SPEEDRUNNING or PVP_ARENA. Each data group has a config toggle (deaths, login and logout have none).
+Nothing is sent until a server URL and a token are set (the token may be the one the plugin made for a join code, see above) and the player has ticked "Allow sending to this server" (consent, remembered per URL host; a different host withdraws it), and nothing on worlds of type SEASONAL, DEADMAN, FRESH_START_WORLD, TOURNAMENT_WORLD, BETA_WORLD, NOSAVE_MODE, QUEST_SPEEDRUNNING or PVP_ARENA. Each data group has a config toggle (deaths, login and logout have none).
 
 | Type | When (as built) |
 | --- | --- |
@@ -125,5 +130,5 @@ Items (`Item`): `{ id, qty, name, ge, ha }`. `id` is canonical (un-noted; placeh
 ## Privacy
 
 - Only the configured URL is contacted, with RuneLite's OkHttp client, asynchronously.
-- No credentials are read or sent. The token is only sent to the configured URL.
+- No credentials are read or sent. The token and the join code are only sent to the configured URL and never logged.
 - Nothing about other players: PvP loot and player killers carry no name; `interacting` is never a player.
