@@ -54,7 +54,11 @@
   login link `<server origin>/#token=<token>`) and shows whether URL, token and consent are set. It reads nothing from
   the server, shows no goals, never displays or logs the token, and can be hidden ("Show side panel"). It does not
   change the pure-sender rule.
-- `./gradlew --no-daemon clean build` passes on JDK 11: 229 unit tests, 0 failures, no javac warnings.
+- `./gradlew --no-daemon clean build` passes on JDK 11: 241 unit tests, 0 failures, no javac warnings.
+- **Slayer hub fields (2026-11-19, branch `slayer-hub`), built and unit-tested, not yet run in the game.** `slayer`
+  carries `blockedByMaster` (every master's block list, 7th diary slot included) and `stored` (the Task Storage slot,
+  captured while the Rewards > Tasks tab is drawn; `null` when seen empty), and `blocked` uses Turael's list for
+  Spria. Optional fields: an older server ignores them. Checklist item 43.
 - **Kingdom stored resources and choices (owner request 2026-11-15), built and unit-tested, not yet run in the game.**
   `kingdom` also carries `approvalPoints` (0-127), `resourcePoints` (varbit `MISC_RESTOTAL_LOWBITS`: bits 0-17 of the
   same player var as the approval, 18 bits = the game's 262,143-point store, so very likely the points gathered
@@ -305,6 +309,17 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     line "rejected the token or the join code" and nothing more is sent; fixing the code resumes without a second
     `login`. With the server at its user cap (`JOIN_MAX_USERS`): the chat line "not taking new members". Look at
     `TrackerSyncPlugin.applyServerConfig`, `JoinToken`, `EventSender.onResult`.
+43. [ ] **Slayer hub: every master's block list, Task Storage, Spria.** (2026-11-19, branch `slayer-hub`)
+    a) Block a task (or just view the block list) at two different masters, e.g. Duradel and Konar: the next `slayer`
+    has `blockedByMaster` with both lists matching each master's Rewards > Tasks block list, every other master
+    present (`[]` when empty), and no `Spria` key. If you have a 7th (diary-reward) block slot, the task in it is
+    listed too, also in `blocked` for the current master.
+    b) Open a slayer master's Rewards > Tasks tab with a task in Task Storage: within ~2 s a `slayer` with `stored`
+    `{name, amount, seenAt}` matching the tab (a boss task by its boss name). Store or take the task out and open the
+    tab again: `stored` follows, and is `null` when the slot is empty. Before opening the tab in a session `stored` is
+    absent. Note whether a stored boss task shows an amount (if the tab shows no amount the plugin keeps the old
+    value). Other interfaces (bank, shops) must not change `stored`. Look at `SlayerCollector.captureStored`.
+    c) With Spria as the current master (task from Spria in Draynor): `blocked` shows Turael's block list.
 
 Also check: the plugin's Data toggles stop each group; turning one back on resends that group's snapshots.
 
@@ -328,8 +343,13 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
 - Potion storage needs the bank open; the potion store's var trigger is learnt the first time it is drawn.
 - Diary tasks come from bundled data (Group Ironmen Tracker site, BSD-2); a task added by a game update is missing
   until the data is refreshed. Completion = "all tasks done" or "reward claimed" varbit.
-- Slayer: `blocked` is only the current master's list; Spria (9) has none; master names 1–9 are from the OSRS Wiki's
-  varbit table (facts only), 10 = Mortimer from RuneLite core.
+- Slayer: `blocked` is the current master's list (Spria (9) uses Turael's, as the wiki says she shares it);
+  `blockedByMaster` has every master with block varbits, each with its 7th diary-reward slot (Mortimer: two slots).
+  Master names 1–9 are from the OSRS Wiki's varbit table (facts only), 10 = Mortimer from RuneLite core.
+- Slayer Task Storage (`stored`): only seen while a slayer master's Rewards > Tasks tab is drawn (scripts 328/421,
+  IF4 amount / IF5 task id / IF6 boss sublist, accepted only when IF1/IF2 equal the live task varps); kept in memory
+  for the session, forgotten at logout or plugin stop, so it is absent until the tab is opened once per session. The
+  script ids, the IF varp layout and the boss slot's amount -1 come from the Mystix plugin, unverified in game.
 - Kingdom: workers are named Wood, Herbs/flax, Fishing, Mining, Hardwood, Farming; the hardwood, herb/flax and
   raw/cooked choices and the stored resource points (`MISC_RESTOTAL_LOWBITS`, 18 bits) are sent since 2026-11-15, read
   from varbits whose meaning comes from the game's interface scripts and names, not yet checked in game. Whether the

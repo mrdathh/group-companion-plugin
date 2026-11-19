@@ -2,9 +2,12 @@ package com.osrstracker;
 
 import com.osrstracker.model.CombatAchievementsData;
 import com.osrstracker.model.DiariesData;
+import com.osrstracker.model.EventType;
 import com.osrstracker.model.KingdomData;
+import com.osrstracker.model.SlayerData;
 import com.osrstracker.model.TimersData;
 import com.osrstracker.timers.TimersTestAccess;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -17,6 +20,7 @@ import net.runelite.api.Client;
 import net.runelite.api.EnumComposition;
 import net.runelite.api.StructComposition;
 import net.runelite.api.gameval.DBTableID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.http.api.RuneLiteAPI;
@@ -27,7 +31,9 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -193,7 +199,140 @@ public class ProgressRulesTest
 		SlayerCollector collector = new SlayerCollector(client, mock(ClientThread.class), mock(SessionTracker.class),
 			mock(TrackerSyncConfig.class), mock(ScheduledExecutorService.class), new TimeSource());
 		assertEquals(Arrays.asList("Black demons", "Spiritual creatures"), collector.readBlocked(5));
-		assertNull("Spria has no block list", collector.readBlocked(9));
+		assertEquals("Spria has none of her own: Turael's (empty here)", Collections.emptyList(), collector.readBlocked(9));
+		assertNull("no master", collector.readBlocked(0));
+	}
+
+	private static Client slayerClient()
+	{
+		Client client = mock(Client.class);
+		when(client.getDBRowsByValue(DBTableID.SlayerTask.ID, DBTableID.SlayerTask.COL_ID, 0, 46)).thenReturn(Collections.singletonList(501));
+		when(client.getDBRowsByValue(DBTableID.SlayerTask.ID, DBTableID.SlayerTask.COL_ID, 0, 97)).thenReturn(Collections.singletonList(502));
+		when(client.getDBRowsByValue(DBTableID.SlayerTask.ID, DBTableID.SlayerTask.COL_ID, 0, 42)).thenReturn(Collections.singletonList(503));
+		when(client.getDBTableField(501, DBTableID.SlayerTask.COL_NAME_UPPERCASE, 0)).thenReturn(new Object[]{"Black demons"});
+		when(client.getDBTableField(502, DBTableID.SlayerTask.COL_NAME_UPPERCASE, 0)).thenReturn(new Object[]{"Spiritual creatures"});
+		when(client.getDBTableField(503, DBTableID.SlayerTask.COL_NAME_UPPERCASE, 0)).thenReturn(new Object[]{"Abyssal demons"});
+		// boss task: sublist id 7 → task row 504
+		when(client.getDBRowsByValue(DBTableID.SlayerTaskSublist.ID, DBTableID.SlayerTaskSublist.COL_TASK_SUBTABLE_ID, 0, 7))
+			.thenReturn(Collections.singletonList(600));
+		when(client.getDBTableField(600, DBTableID.SlayerTaskSublist.COL_TASK, 0)).thenReturn(new Object[]{504});
+		when(client.getDBTableField(504, DBTableID.SlayerTask.COL_NAME_UPPERCASE, 0)).thenReturn(new Object[]{"Vorkath"});
+		when(client.getDBTableRows(DBTableID.SlayerUnlock.ID)).thenReturn(Collections.emptyList());
+		return client;
+	}
+
+	@Test
+	public void slayerBlockListsOfEveryMasterWithTheDiarySlot()
+	{
+		Client client = slayerClient();
+		when(client.getVarbitValue(VarbitID.SLAYER_BLOCKED_DURADEL_1)).thenReturn(46);
+		when(client.getVarbitValue(VarbitID.SLAYER_BLOCKED_DURADEL_DIARY)).thenReturn(97);
+		when(client.getVarbitValue(VarbitID.SLAYER_BLOCKED_TURAEL_2)).thenReturn(42);
+		when(client.getVarbitValue(VarbitID.SLAYER_BLOCKED_TURAEL_DIARY)).thenReturn(46);
+		when(client.getVarbitValue(VarbitID.SLAYER_BLOCKED_MORTIMER_2)).thenReturn(97);
+		SlayerCollector collector = new SlayerCollector(client, mock(ClientThread.class), mock(SessionTracker.class),
+			mock(TrackerSyncConfig.class), mock(ScheduledExecutorService.class), new TimeSource());
+
+		assertEquals("7th (diary) slot included", Arrays.asList("Black demons", "Spiritual creatures"), collector.readBlocked(5));
+		assertEquals(1, SlayerCollector.blockListMaster(9));
+		assertEquals(5, SlayerCollector.blockListMaster(5));
+		assertEquals("Spria → Turael's varbits", Arrays.asList("Abyssal demons", "Black demons"), collector.readBlocked(9));
+
+		Map<String, List<String>> all = collector.readBlockedByMaster();
+		assertEquals(Arrays.asList("Turael", "Mazchna", "Vannaka", "Chaeldar", "Duradel", "Nieve", "Krystilia", "Konar",
+			"Mortimer"), new ArrayList<>(all.keySet()));
+		assertEquals(Arrays.asList("Abyssal demons", "Black demons"), all.get("Turael"));
+		assertEquals(Arrays.asList("Black demons", "Spiritual creatures"), all.get("Duradel"));
+		assertEquals(Collections.singletonList("Spiritual creatures"), all.get("Mortimer"));
+		assertEquals(Collections.emptyList(), all.get("Konar"));
+
+		for (int v : new int[]{VarbitID.SLAYER_BLOCKED_TURAEL_DIARY, VarbitID.SLAYER_BLOCKED_MAZCHNA_DIARY,
+			VarbitID.SLAYER_BLOCKED_VANNAKA_DIARY, VarbitID.SLAYER_BLOCKED_CHAELDAR_DIARY, VarbitID.SLAYER_BLOCKED_KONAR_DIARY,
+			VarbitID.SLAYER_BLOCKED_NIEVE_DIARY, VarbitID.SLAYER_BLOCKED_DURADEL_DIARY, VarbitID.SLAYER_BLOCKED_KRYSTILIA_DIARY})
+		{
+			assertTrue("diary varbit " + v + " triggers a send", SlayerCollector.isSlayerVar(-1, v));
+		}
+		for (int[] varbits : SlayerCollector.BLOCK_VARBITS.values())
+		{
+			assertTrue(varbits.length == 7 || varbits.length == 2);
+		}
+	}
+
+	@Test
+	public void slayerTaskStorageRules()
+	{
+		assertTrue(SlayerCollector.servesSlayerScreen(87, 42, 87, 42));
+		assertFalse("IF varps serve another interface", SlayerCollector.servesSlayerScreen(5, 42, 87, 42));
+		assertFalse(SlayerCollector.servesSlayerScreen(87, 3, 87, 42));
+
+		assertEquals(SlayerCollector.StoredSlotState.TASK, SlayerCollector.storedSlotState(42, 150));
+		assertEquals(SlayerCollector.StoredSlotState.EMPTY, SlayerCollector.storedSlotState(0, 150));
+		assertEquals(SlayerCollector.StoredSlotState.EMPTY, SlayerCollector.storedSlotState(42, 0));
+		assertEquals(SlayerCollector.StoredSlotState.EMPTY, SlayerCollector.storedSlotState(42, -1));
+		assertEquals(SlayerCollector.StoredSlotState.TASK, SlayerCollector.storedSlotState(98, 5));
+		assertEquals(SlayerCollector.StoredSlotState.UNREADABLE, SlayerCollector.storedSlotState(98, -1));
+	}
+
+	@Test
+	public void slayerTaskStorageCapture()
+	{
+		Client client = slayerClient();
+		SessionTracker session = mock(SessionTracker.class);
+		TrackerSyncConfig config = mock(TrackerSyncConfig.class);
+		when(session.isActive()).thenReturn(true);
+		when(config.sendProgress()).thenReturn(true);
+		TimeSource time = new TimeSource();
+		time.setMillisSupplier(() -> Instant.parse("2026-11-19T10:00:00Z").toEpochMilli());
+		SlayerCollector collector = new SlayerCollector(client, mock(ClientThread.class), session, config,
+			mock(ScheduledExecutorService.class), time);
+		ArgumentCaptor<Object> data = ArgumentCaptor.forClass(Object.class);
+
+		collector.emit();
+		verify(session).emit(eq(EventType.SLAYER), data.capture());
+		assertNull("not seen yet: omitted", ((SlayerData) data.getValue()).getStored());
+
+		// current task 87 x task 46; the Tasks tab mirrors it into IF1/IF2 and the stored slot into IF4-IF6
+		when(client.getVarpValue(VarPlayerID.SLAYER_COUNT)).thenReturn(87);
+		when(client.getVarpValue(VarPlayerID.SLAYER_TARGET)).thenReturn(46);
+		when(client.getVarpValue(VarPlayerID.IF1)).thenReturn(3);
+		when(client.getVarpValue(VarPlayerID.IF2)).thenReturn(46);
+		when(client.getVarpValue(VarPlayerID.IF4)).thenReturn(150);
+		when(client.getVarpValue(VarPlayerID.IF5)).thenReturn(42);
+		assertFalse("IF1 does not match: other interface", collector.captureStored());
+
+		when(client.getVarpValue(VarPlayerID.IF1)).thenReturn(87);
+		assertTrue(collector.captureStored());
+		assertFalse("unchanged", collector.captureStored());
+		collector.emit();
+		verify(session, times(2)).emit(eq(EventType.SLAYER), data.capture());
+		SlayerData.StoredSlot slot = ((SlayerData) data.getValue()).getStored();
+		assertEquals(new SlayerData.StoredTask("Abyssal demons", 150, "2026-11-19T10:00:00.000Z"), slot.getTask());
+
+		// boss task in storage
+		when(client.getVarpValue(VarPlayerID.IF4)).thenReturn(4);
+		when(client.getVarpValue(VarPlayerID.IF5)).thenReturn(98);
+		when(client.getVarpValue(VarPlayerID.IF6)).thenReturn(7);
+		assertTrue(collector.captureStored());
+		// boss slot drawn name-only (amount -1): kept as it was
+		when(client.getVarpValue(VarPlayerID.IF4)).thenReturn(-1);
+		assertFalse(collector.captureStored());
+		collector.emit();
+		verify(session, times(3)).emit(eq(EventType.SLAYER), data.capture());
+		assertEquals(new SlayerData.StoredTask("Vorkath", 4, "2026-11-19T10:00:00.000Z"),
+			((SlayerData) data.getValue()).getStored().getTask());
+
+		// emptied
+		when(client.getVarpValue(VarPlayerID.IF5)).thenReturn(0);
+		assertTrue(collector.captureStored());
+		collector.emit();
+		verify(session, times(4)).emit(eq(EventType.SLAYER), data.capture());
+		assertEquals(SlayerData.StoredSlot.empty(), ((SlayerData) data.getValue()).getStored());
+
+		// the session ends: forgotten
+		collector.onSessionEnd();
+		collector.emit();
+		verify(session, times(5)).emit(eq(EventType.SLAYER), data.capture());
+		assertNull(((SlayerData) data.getValue()).getStored());
 	}
 
 	// ------------------------------------------------------------------ kingdom

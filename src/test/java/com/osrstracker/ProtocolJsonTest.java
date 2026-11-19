@@ -37,6 +37,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import net.runelite.http.api.RuneLiteAPI;
 import static org.junit.Assert.assertEquals;
@@ -396,6 +397,42 @@ public class ProtocolJsonTest
 			event(EventType.SLAYER, new SlayerData(new SlayerData.Task("Cows", 3, 15, null), 0, 1)));
 		assertJson(envelope("slayer", "{\"task\":null,\"points\":10,\"streak\":4}"),
 			event(EventType.SLAYER, new SlayerData(null, 10, 4)));
+	}
+
+	@Test
+	public void slayerBlockedByMasterAndStoredTask()
+	{
+		Map<String, List<String>> byMaster = new LinkedHashMap<>();
+		byMaster.put("Duradel", Arrays.asList("Black demons", "Spiritual creatures"));
+		byMaster.put("Turael", Collections.emptyList());
+		String base = "\"task\":null,\"points\":10,\"streak\":4,\"master\":\"Duradel\",\"wildernessStreak\":0,"
+			+ "\"blocked\":[\"Black demons\",\"Spiritual creatures\"],\"unlocks\":[],"
+			+ "\"blockedByMaster\":{\"Duradel\":[\"Black demons\",\"Spiritual creatures\"],\"Turael\":[]}";
+
+		// stored seen holding a task
+		SlayerData.StoredSlot task = SlayerData.StoredSlot.of(new SlayerData.StoredTask("Abyssal demons", 150, "2026-11-19T10:00:00.000Z"));
+		assertJson(envelope("slayer", "{" + base + ",\"stored\":{\"name\":\"Abyssal demons\",\"amount\":150,"
+			+ "\"seenAt\":\"2026-11-19T10:00:00.000Z\"}}"),
+			event(EventType.SLAYER, new SlayerData(null, 10, 4, "Duradel", 0, byMaster.get("Duradel"),
+				Collections.emptyList(), byMaster, task)));
+
+		// stored seen empty: explicit null
+		String json = GSON.toJson(event(EventType.SLAYER, new SlayerData(null, 10, 4, "Duradel", 0, byMaster.get("Duradel"),
+			Collections.emptyList(), byMaster, SlayerData.StoredSlot.empty())));
+		assertTrue(json, json.contains("\"stored\":null"));
+		assertJson(envelope("slayer", "{" + base + ",\"stored\":null}"),
+			event(EventType.SLAYER, new SlayerData(null, 10, 4, "Duradel", 0, byMaster.get("Duradel"),
+				Collections.emptyList(), byMaster, SlayerData.StoredSlot.empty())));
+
+		// stored not seen: omitted (and blockedByMaster omitted when unknown)
+		json = GSON.toJson(event(EventType.SLAYER, new SlayerData(null, 10, 4, "Duradel", 0, byMaster.get("Duradel"),
+			Collections.emptyList(), byMaster, null)));
+		assertTrue(json, !json.contains("stored"));
+		assertJson(envelope("slayer", "{" + base + "}"),
+			event(EventType.SLAYER, new SlayerData(null, 10, 4, "Duradel", 0, byMaster.get("Duradel"),
+				Collections.emptyList(), byMaster, null)));
+		json = GSON.toJson(new SlayerData(null, 10, 4));
+		assertTrue(json, !json.contains("blockedByMaster") && !json.contains("stored") && json.contains("\"task\":null"));
 	}
 
 	@Test
