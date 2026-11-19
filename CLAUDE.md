@@ -11,6 +11,9 @@ rename them.
 
 - `TrackerSyncPlugin`, `TrackerSyncConfig` — lifecycle/event wiring; config group `trackersync` (hidden key `clientId`).
 - `TrackerSyncPanel` — side panel: copy token, copy app login link (`<origin>/#token=`), status line; "Show side panel".
+- `JoinToken` — joining with the server's join code: with an empty Token and a "Join code", `applyServerConfig` makes
+  the player's token (`SecureRandom`, server format) and saves it once; `EventSender` sends `X-Join-Code` while the
+  field is set; a 403 on ingest (server full for joining) stops sending like a 401.
 - `EventSender` — queue, batching, retry/backoff, 500 cap, newest snapshot per key, unchanged suppression, volatile `status`,
   solo events (`loot_history` alone in its request), heartbeat.
 - `SessionTracker` — login/logout, account ref, world exclusions; every emit goes through it. One `login` per real

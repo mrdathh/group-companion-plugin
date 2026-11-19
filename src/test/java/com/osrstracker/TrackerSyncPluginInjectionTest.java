@@ -37,12 +37,15 @@ import org.junit.After;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -110,6 +113,7 @@ public class TrackerSyncPluginInjectionTest
 
 	private final MockWebServer server = new MockWebServer();
 	private volatile String token = "osrs_test";
+	private volatile String joinCode = "";
 	private volatile boolean consent = true;
 	private TrackerSyncPlugin plugin;
 
@@ -129,6 +133,13 @@ public class TrackerSyncPluginInjectionTest
 		when(configManager.getConfig(TrackerSyncConfig.class)).thenReturn(config);
 		when(config.serverUrl()).thenReturn(server.url("/").toString());
 		when(config.token()).thenAnswer(inv -> token);
+		when(config.joinCode()).thenAnswer(inv -> joinCode);
+		// The Token field as RuneLite stores it: what the plugin saves there is what config.token() returns next.
+		doAnswer(inv ->
+		{
+			token = inv.getArgument(2);
+			return null;
+		}).when(configManager).setConfiguration(eq(TrackerSyncConfig.GROUP), eq(TrackerSyncConfig.TOKEN_KEY), anyString());
 		when(config.consent()).thenAnswer(inv -> consent);
 		when(config.showPanel()).thenReturn(true);
 		doAnswer(inv ->
@@ -352,6 +363,86 @@ public class TrackerSyncPluginInjectionTest
 		assertEquals(Collections.emptyList(), sessionEventsWithin(500));
 		assertEquals(3, plugin.collectorsFor("sendProgress").size());
 		plugin.shutDown();
+	}
+
+	@Test
+	public void joinCodeWithAnEmptyTokenMakesOneTokenAndJoinsWithIt() throws Exception
+	{
+		token = "";
+		joinCode = "ABCD-EFGH-JKMN-PQRS";
+		inGame();
+		plugin.startUp();
+		String made = token;
+		assertTrue(made, made.matches("^osrs_[A-Za-z0-9_-]{43}$"));
+		verify(configManager, times(1)).setConfiguration(eq(TrackerSyncConfig.GROUP), eq(TrackerSyncConfig.TOKEN_KEY), anyString());
+		// RuneLite reports the saved token as a config change: it settles into no new destination.
+		configChanged(TrackerSyncConfig.TOKEN_KEY, made);
+		((FakeScheduler) executor).advance(2 * TrackerSyncPlugin.CONFIG_SETTLE_MS);
+		logIn();
+		RecordedRequest first = server.takeRequest(5, TimeUnit.SECONDS);
+		assertNotNull(first);
+		assertEquals("Bearer " + made, first.getHeader("Authorization"));
+		assertEquals("ABCD-EFGH-JKMN-PQRS", first.getHeader("X-Join-Code"));
+		assertEquals(Collections.singletonList("login"), eventTypes(first).subList(0, 1));
+		assertEquals("one login only", Collections.emptyList(), sessionEventsWithin(1_000));
+
+		// Kept across restarts; never made again while the Token field has a value.
+		plugin.shutDown();
+		plugin.startUp();
+		assertEquals(made, token);
+		verify(configManager, times(1)).setConfiguration(eq(TrackerSyncConfig.GROUP), eq(TrackerSyncConfig.TOKEN_KEY), anyString());
+		// The side panel copies the made token and its login link.
+		List<String> copied = new ArrayList<>();
+		TrackerSyncPanel panel = new TrackerSyncPanel(config, copied::add);
+		assertEquals(made, copiedByButton(panel, TrackerSyncPanel.COPY_TOKEN, copied));
+		assertEquals(server.url("/").toString().replaceAll("/$", "") + "/#token=" + made,
+			copiedByButton(panel, TrackerSyncPanel.COPY_LINK, copied));
+		plugin.shutDown();
+	}
+
+	@Test
+	public void aTokenOfTheOwnersIsKeptAndTheJoinCodeIsIgnoredForIt() throws Exception
+	{
+		joinCode = "ABCD-EFGH-JKMN-PQRS";
+		inGame();
+		plugin.startUp();
+		verify(configManager, times(0)).setConfiguration(eq(TrackerSyncConfig.GROUP), eq(TrackerSyncConfig.TOKEN_KEY), anyString());
+		logIn();
+		assertEquals(Collections.singletonList("login Bearer osrs_test"), sessionEventsWithin(1_000));
+
+		// Editing only the join code is not a new destination: no second login.
+		joinCode = "";
+		configChanged(TrackerSyncConfig.JOIN_CODE_KEY, "");
+		((FakeScheduler) executor).advance(2 * TrackerSyncPlugin.CONFIG_SETTLE_MS);
+		assertEquals(Collections.emptyList(), sessionEventsWithin(500));
+		plugin.shutDown();
+	}
+
+	private static String copiedByButton(TrackerSyncPanel panel, String label, List<String> copied)
+	{
+		javax.swing.JButton b = findButton(panel, label);
+		b.doClick();
+		return copied.get(copied.size() - 1);
+	}
+
+	private static javax.swing.JButton findButton(java.awt.Container c, String label)
+	{
+		for (java.awt.Component child : c.getComponents())
+		{
+			if (child instanceof javax.swing.JButton && label.equals(((javax.swing.JButton) child).getText()))
+			{
+				return (javax.swing.JButton) child;
+			}
+			if (child instanceof java.awt.Container)
+			{
+				javax.swing.JButton found = findButton((java.awt.Container) child, label);
+				if (found != null)
+				{
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 
 	@Test

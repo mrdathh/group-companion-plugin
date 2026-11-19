@@ -296,6 +296,15 @@ ten minutes cover the most. "Look at" names the class to check when it is wrong.
     tier?), Gnome Restaurant, Corrupted/normal Gauntlet, Theatre of Blood and Tombs of Amascut entry/expert. If N is 0
     for an account with boss kills, the vars do not reach the client at login. Look at `ClogPageVars`,
     `CollectionLogCollector.emitVarPages`.
+42. [ ] **Joining with a join code.** Needs a server with migration 16 and a join code (`npm run user -- join-code
+    new`). In the plugin: Server URL, the **Join code**, Token **empty**, consent ticked. Within ~2 s the Token field
+    fills with an `osrs_…` value (secret field; "Copy token" in the side panel copies it). Log in: the first request
+    carries `X-Join-Code` and the server's `npm run user -- list` shows a new user named after the character with
+    `joined` after the date. "Copy app login link" opens the app signed in as that user, with this character under
+    your own characters. Restart the client: the token stays the same (no second user). A wrong join code: one chat
+    line "rejected the token or the join code" and nothing more is sent; fixing the code resumes without a second
+    `login`. With the server at its user cap (`JOIN_MAX_USERS`): the chat line "not taking new members". Look at
+    `TrackerSyncPlugin.applyServerConfig`, `JoinToken`, `EventSender.onResult`.
 
 Also check: the plugin's Data toggles stop each group; turning one back on resends that group's snapshots.
 
@@ -377,15 +386,17 @@ Also check: the plugin's Data toggles stop each group; turning one back on resen
 
 ## Next steps
 
-1. In-game checks of the latest work (restart the developer client first): item 12 (collection log rework: summary
+1. Joining with a join code (branch `self-join`, 2026-11-19): deploy the server first (migration 16), then check
+   item 42. An older server ignores `X-Join-Code`, so a player with only a join code gets 401 there.
+2. In-game checks of the latest work (restart the developer client first): item 12 (collection log rework: summary
    at login, whole-log read with the Group Ironmen Tracker on, new items by chat and popup), item 9 (a kill with a
    kill count: the input for the server's drop luck), item 41 (page kill counts without opening pages, then item 40),
    item 32 (kingdom: stored resources and choices against Advisor Ghrim), item 35 (loot history import; after a session played without
    this plugin, the server's Loot Today / 7 days shows it as approximate loot), item 28 (loadouts), then the rest of
    the unticked items.
-2. The owner rebuilds and restarts the server so it has drop luck, approximate loot and the merged collection log;
+3. The owner rebuilds and restarts the server so it has drop luck, approximate loot and the merged collection log;
    the first real OSRS Wiki import runs about a minute after the restart.
-3. Later: the Plugin Hub submission (public BSD-2 repository exists; suggested hub name `group-companion`).
+4. Later: the Plugin Hub submission (public BSD-2 repository exists; suggested hub name `group-companion`).
 
 ## Left undone
 

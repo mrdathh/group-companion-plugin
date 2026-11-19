@@ -31,12 +31,17 @@ public class TrackerSyncPanel extends PluginPanel
 	static final String COPY_LINK = "Copy app login link";
 	static final String COPIED = "Copied";
 	static final int COPIED_MS = 2_000;
+	/** Shown under the buttons; never contains the token. */
+	static final String HELP = "<html>Sign in to the app with the login link (open it on your phone) or the token."
+		+ " Joined with a join code? This plugin made your token: to play on another PC too, copy it into the plugin"
+		+ " there. A new token would make you a new member.</html>";
 
 	private final TrackerSyncConfig config;
 	private final Consumer<String> clipboard;
 	private final JButton copyToken = new JButton(COPY_TOKEN);
 	private final JButton copyLink = new JButton(COPY_LINK);
 	private final JLabel status = new JLabel();
+	private final JLabel help = new JLabel(HELP);
 
 	TrackerSyncPanel(TrackerSyncConfig config)
 	{
@@ -64,9 +69,15 @@ public class TrackerSyncPanel extends PluginPanel
 		copyLink.addActionListener(e -> copy(copyLink, COPY_LINK, appLoginLink(config.serverUrl(), config.token())));
 
 		status.setForeground(Color.LIGHT_GRAY);
+		help.setForeground(Color.GRAY);
+		help.setFont(help.getFont().deriveFont(help.getFont().getSize2D() - 1f));
+		JPanel bottom = new JPanel(new BorderLayout(0, 8));
+		bottom.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		bottom.add(status, BorderLayout.NORTH);
+		bottom.add(help, BorderLayout.CENTER);
 		add(title, BorderLayout.NORTH);
 		add(buttons, BorderLayout.CENTER);
-		add(status, BorderLayout.SOUTH);
+		add(bottom, BorderLayout.SOUTH);
 		refresh();
 	}
 
@@ -76,10 +87,11 @@ public class TrackerSyncPanel extends PluginPanel
 		boolean hasToken = token() != null;
 		boolean hasLink = appLoginLink(config.serverUrl(), config.token()) != null;
 		copyToken.setEnabled(hasToken);
-		copyToken.setToolTipText(hasToken ? "Copies your token, e.g. to paste into the app's login" : "Set a token in the plugin settings first");
+		copyToken.setToolTipText(hasToken ? "Copies your token, e.g. to paste into the app's login or the plugin on another PC"
+			: "Set a token or a join code in the plugin settings first");
 		copyLink.setEnabled(hasLink);
 		copyLink.setToolTipText(hasLink ? "Copies a link that signs the app in on another device"
-			: "Set the Server URL and a token in the plugin settings first");
+			: "Set the Server URL and a token or a join code in the plugin settings first");
 		status.setText(statusLine(Consent.host(config.serverUrl()) != null, hasToken, config.consent()));
 	}
 

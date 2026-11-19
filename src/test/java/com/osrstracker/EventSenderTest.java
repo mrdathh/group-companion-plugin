@@ -29,6 +29,7 @@ import okhttp3.mockwebserver.RecordedRequest;
 import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.After;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import org.junit.Before;
@@ -308,6 +309,81 @@ public class EventSenderTest
 		assertEquals("Bearer osrs_new-token", requests.get(1).getHeader("Authorization"));
 		assertEquals(2, events(1).size());
 		assertEquals(0, sender.pendingHistory());
+	}
+
+	@Test
+	public void joinCodeIsSentAsAHeaderOnlyWhileSet()
+	{
+		sender.enqueue(ACCOUNT, history());
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		assertNull(requests.get(0).getHeader("X-Join-Code"));
+
+		assertFalse("a join code is not a new destination",
+			sender.configure(server.url("/").toString(), TOKEN, "client-1", true, " ABCD-EFGH-JKMN "));
+		sender.enqueue(ACCOUNT, history());
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		assertEquals("ABCD-EFGH-JKMN", requests.get(1).getHeader("X-Join-Code"));
+		assertEquals("Bearer " + TOKEN, requests.get(1).getHeader("Authorization"));
+		// Also after the server accepted the token (always sent while set; the server ignores it then).
+		sender.enqueue(ACCOUNT, history());
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		assertEquals("ABCD-EFGH-JKMN", requests.get(2).getHeader("X-Join-Code"));
+
+		sender.configure(server.url("/").toString(), TOKEN, "client-1", true, "");
+		sender.enqueue(ACCOUNT, history());
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		assertNull(requests.get(3).getHeader("X-Join-Code"));
+	}
+
+	@Test
+	public void aWrongJoinCodeStopsSendingUntilTheCodeChanges()
+	{
+		sender.configure(server.url("/").toString(), TOKEN, "client-1", true, "WRONG-CODE");
+		nextResponse = status(401);
+		sender.enqueue(ACCOUNT, history());
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		assertEquals(1, requestCount());
+		assertEquals(1, unauthorizedCalls.get());
+		scheduler.advance(600_000);
+		assertEquals(1, requestCount());
+
+		nextResponse = ok();
+		assertFalse(sender.configure(server.url("/").toString(), TOKEN, "client-1", true, "RIGHT-CODE"));
+		scheduler.advance(1);
+		assertEquals(2, requestCount());
+		assertEquals("RIGHT-CODE", requests.get(1).getHeader("X-Join-Code"));
+		assertEquals("the kept event goes out", 1, events(1).size());
+	}
+
+	@Test
+	public void status403WhileJoiningStopsSendingLikeA401()
+	{
+		AtomicInteger refused = new AtomicInteger();
+		sender.stop();
+		sender.configure(server.url("/").toString(), TOKEN, "client-1", true, "ABCD-EFGH");
+		sender.start(new EventSender.Listener()
+		{
+			@Override
+			public void onUnauthorized()
+			{
+				unauthorizedCalls.incrementAndGet();
+			}
+
+			@Override
+			public void onJoinRefused()
+			{
+				refused.incrementAndGet();
+			}
+		});
+		nextResponse = status(403);
+		sender.enqueue(ACCOUNT, history());
+		sender.setOnlineAccount(ACCOUNT);
+		scheduler.advance(EventSender.FLUSH_DELAY_MS);
+		scheduler.advance(600_000);
+		assertEquals("no retries and no heartbeats", 1, requestCount());
+		assertEquals(1, refused.get());
+		assertEquals(0, unauthorizedCalls.get());
+		assertEquals(1, sender.pendingHistory());
 	}
 
 	@Test

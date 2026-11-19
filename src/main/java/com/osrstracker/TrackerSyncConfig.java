@@ -11,6 +11,8 @@ public interface TrackerSyncConfig extends Config
 	String GROUP = "trackersync";
 	String CLIENT_ID_KEY = "clientId";
 	String CONSENT_KEY = "consent";
+	String TOKEN_KEY = "token";
+	String JOIN_CODE_KEY = "joinCode";
 	String SHOW_PANEL_KEY = "showPanel";
 	/** Hidden: the host the consent was given for. */
 	String CONSENT_HOST_KEY = "consentHost";
@@ -19,7 +21,8 @@ public interface TrackerSyncConfig extends Config
 		name = "Server (data leaves RuneLite)",
 		description = "Everything this plugin collects is sent to the server URL you enter below, which is not"
 			+ " controlled or verified by RuneLite developers. That server sees your IP address and your game data."
-			+ " Nothing is sent until the URL and the token are set and you tick \"Allow sending to this server\".",
+			+ " Nothing is sent until the URL and the token (or a join code) are set and you tick \"Allow sending to this"
+			+ " server\".",
 		position = 0
 	)
 	String serverSection = "server";
@@ -45,14 +48,30 @@ public interface TrackerSyncConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "token",
+		keyName = TOKEN_KEY,
 		name = "Token",
-		description = "The osrs_... token printed by your Group Companion server when your user was created",
+		description = "Your personal osrs_... token. Leave it empty when you join with a join code: the plugin then makes"
+			+ " your token and fills it in. To play on another PC too, copy your token there (side panel: Copy token);"
+			+ " a new token would make you a new member.",
 		secret = true,
 		section = serverSection,
 		position = 1
 	)
 	default String token()
+	{
+		return "";
+	}
+
+	@ConfigItem(
+		keyName = JOIN_CODE_KEY,
+		name = "Join code",
+		description = "The join code your server's owner shared. With an empty Token, the plugin makes your own token and"
+			+ " you join the server the first time data is sent. Not needed if the owner gave you a token.",
+		secret = true,
+		section = serverSection,
+		position = 2
+	)
+	default String joinCode()
 	{
 		return "";
 	}
@@ -64,7 +83,7 @@ public interface TrackerSyncConfig extends Config
 			+ " changing the Server URL to a different host unticks it.",
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
 		section = serverSection,
-		position = 2
+		position = 3
 	)
 	default boolean consent()
 	{
@@ -76,7 +95,7 @@ public interface TrackerSyncConfig extends Config
 		name = "Show side panel",
 		description = "A Group Companion side panel with buttons to copy your token and the app's login link",
 		section = serverSection,
-		position = 3
+		position = 4
 	)
 	default boolean showPanel()
 	{

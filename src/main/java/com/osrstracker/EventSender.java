@@ -61,7 +61,14 @@ public class EventSender
 	/** Callbacks into the plugin; invoked from OkHttp threads. */
 	public interface Listener
 	{
+		/** 401: the token (or, when joining, the join code) was refused. */
 		void onUnauthorized();
+
+		/** 403 while joining: the server takes no new members. Sending stops as after a 401. */
+		default void onJoinRefused()
+		{
+			onUnauthorized();
+		}
 	}
 
 	private final OkHttpClient http;
@@ -71,6 +78,8 @@ public class EventSender
 
 	private HttpUrl endpoint;
 	private String token;
+	/** Sent as X-Join-Code while set (see {@link JoinToken}); null for none. */
+	private String joinCode;
 	private String clientId = "";
 	private Listener listener;
 
@@ -131,6 +140,30 @@ public class EventSender
 			heartbeatFuture = null;
 		}
 		return done;
+	}
+
+	/**
+	 * Apply URL, token, consent and the join code. A changed join code is not a new destination (the return value
+	 * ignores it) but lifts a stop after a 401/403, so a corrected code is tried at once.
+	 *
+	 * @return true if the effective destination (endpoint or token, or whether sending is allowed) changed
+	 */
+	public synchronized boolean configure(String serverUrl, String token, String clientId, boolean consent, String joinCode)
+	{
+		String newJoinCode = JoinToken.headerValue(joinCode);
+		boolean joinCodeChanged = !String.valueOf(newJoinCode).equals(String.valueOf(this.joinCode));
+		this.joinCode = newJoinCode;
+		boolean changed = configure(serverUrl, token, clientId, consent);
+		if (joinCodeChanged && !changed && unauthorized)
+		{
+			unauthorized = false;
+			loggedRejection = false;
+			backoffMs = 0;
+			retryAt = 0;
+			scheduleFlush(0);
+			scheduleHeartbeat();
+		}
+		return changed;
 	}
 
 	/** As {@link #configure(String, String, String, boolean)} with consent given. */
@@ -420,10 +453,16 @@ public class EventSender
 			}
 		}
 		IngestRequest body = new IngestRequest(IngestRequest.PROTOCOL_VERSION, new ClientInfo(clientId, PLUGIN_VERSION), batch.account, events);
-		Request request = new Request.Builder()
+		Request.Builder builder = new Request.Builder()
 			.url(endpoint)
 			.header("Authorization", "Bearer " + token)
-			.header("X-Plugin-Version", PLUGIN_VERSION)
+			.header("X-Plugin-Version", PLUGIN_VERSION);
+		if (joinCode != null)
+		{
+			// Harmless once this token is known to the server (it ignores the header then); see docs/PROTOCOL.md.
+			builder.header("X-Join-Code", joinCode);
+		}
+		Request request = builder
 			.post(RequestBody.create(JSON, gson.toJson(body).getBytes(StandardCharsets.UTF_8)))
 			.build();
 
@@ -473,6 +512,7 @@ public class EventSender
 	private void onResult(Batch batch, int code, String detail)
 	{
 		boolean notifyUnauthorized = false;
+		boolean notifyJoinRefused = false;
 		synchronized (this)
 		{
 			inFlight = false;
@@ -495,13 +535,19 @@ public class EventSender
 				backoffMs = 0;
 				retryAt = 0;
 			}
-			else if (code == 401)
+			else if (code == 401 || code == 403)
 			{
+				// 403 on ingest only answers a join the server refused (it takes no new members): stop the same way.
 				requeue(batch);
 				states.values().removeIf(p -> p.isVolatile);
-				notifyUnauthorized = !unauthorized;
+				if (!unauthorized)
+				{
+					notifyUnauthorized = code == 401;
+					notifyJoinRefused = code == 403;
+				}
 				unauthorized = true;
-				log.warn("Group Companion: server rejected the token (401); sending stopped until the token or URL changes");
+				log.warn("Group Companion: server refused the request ({}); sending stopped until the URL, token or join"
+					+ " code changes", code);
 			}
 			else if (code == -1 || code >= 500 || code == 408 || code == 429)
 			{
@@ -536,6 +582,10 @@ public class EventSender
 		if (notifyUnauthorized && listener != null)
 		{
 			listener.onUnauthorized();
+		}
+		if (notifyJoinRefused && listener != null)
+		{
+			listener.onJoinRefused();
 		}
 	}
 
