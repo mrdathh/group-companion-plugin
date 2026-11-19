@@ -55,7 +55,9 @@ Copyright (c) 2026, Mystix. BSD-2-Clause. Techniques only, own code:
 - `src/main/java/com/osrstracker/ContainerCollector.java`: the extra real containers (seed box, tackle box, kits, boat
   cargo holds, trawling net) (VaultMonitor).
 - `src/main/java/com/osrstracker/SlayerCollector.java`: which vars hold the master, wilderness streak, block lists and
-  unlocks (SlayerMonitor).
+  unlocks (SlayerMonitor); reading the Task Storage slot from the interface-transfer varps IF4-IF6 after the rewards
+  Tasks tab scripts 328/421, guarded by IF1/IF2 matching the live task varps, and the empty-slot rule
+  (SlayerMonitor#captureStoredTask, #hasStoredTask).
 - `src/main/java/com/osrstracker/KingdomCollector.java`: the Kingdom of Miscellania varbits, approval out of 127, the
   Throne of Miscellania gate (KingdomMonitor, KingdomSyncPayload).
 - `src/main/java/com/osrstracker/LootHistoryCollector.java`: importing the core Loot Tracker's stored records

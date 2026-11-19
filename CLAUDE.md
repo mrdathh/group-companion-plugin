@@ -31,6 +31,9 @@ rename them.
   and group storage), `BagCollector` (chat-tracked bags), `DepositCollector` (deposit box → `bank_deposit`),
   `LoadoutCollector` (Inventory Setups saved config), `KingdomCollector` (Miscellania), `LootHistoryCollector`
   (core Loot Tracker's stored `loottracker` records → `loot_history`; `LootHistoryLimiter` trims it to the server's limits).
+- `SlayerCollector` also sends every master's block list (`blockedByMaster`) and the Task Storage slot (`stored`),
+  captured only while the game draws a slayer master's Rewards > Tasks tab (scripts 328/421, IF varps, guarded by
+  IF1/IF2 = the live task varps); the capture lives in memory for the session. It never opens the interface.
 - `CollectionLogCollector` also sends `clog_page`: header kill counts of a page the player opens (never opens pages
   itself), and the same counts for every page in `ClogPageVars` (page struct → header label → `TOTAL_*` player var,
   from cache script 2735) at login and when those vars change, without any page being opened.
